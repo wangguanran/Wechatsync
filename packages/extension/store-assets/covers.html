@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>WechatSync Store Assets</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f5f5;
+      padding: 40px;
+    }
+
+    .section-title {
+      font-size: 14px;
+      color: #666;
+      margin: 40px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .section-title:first-child {
+      margin-top: 0;
+    }
+
+    /* ========== 大横幅 1280x800 ========== */
+    .banner-large {
+      width: 1280px;
+      height: 800px;
+      background: linear-gradient(135deg, #07c160 0%, #06ad56 50%, #059142 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+
+    .banner-large::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.1) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 80%, rgba(255,255,255,0.08) 0%, transparent 40%);
+    }
+
+    .banner-large .logo {
+      width: 160px;
+      height: 160px;
+      background: white;
+      border-radius: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+      margin-bottom: 48px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .banner-large .logo svg {
+      width: 100px;
+      height: 100px;
+    }
+
+    .banner-large h1 {
+      font-size: 64px;
+      font-weight: 800;
+      color: white;
+      margin-bottom: 24px;
+      text-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      position: relative;
+      z-index: 1;
+    }
+
+    .banner-large .tagline {
+      font-size: 32px;
+      color: rgba(255,255,255,0.9);
+      font-weight: 500;
+      position: relative;
+      z-index: 1;
+    }
+
+    .banner-large .features {
+      display: flex;
+      gap: 60px;
+      margin-top: 60px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .banner-large .feature {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      color: white;
+      font-size: 22px;
+      font-weight: 500;
+    }
+
+    .banner-large .feature-icon {
+      width: 48px;
+      height: 48px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ========== 小横幅 440x280 ========== */
+    .banner-small {
+      width: 440px;
+      height: 280px;
+      background: linear-gradient(135deg, #07c160 0%, #059142 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+
+    .banner-small::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -50%;
+      width: 150%;
+      height: 150%;
+      background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 60%);
+    }
+
+    .banner-small .logo {
+      width: 72px;
+      height: 72px;
+      background: white;
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+      margin-bottom: 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .banner-small .logo svg {
+      width: 44px;
+      height: 44px;
+    }
+
+    .banner-small h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: white;
+      margin-bottom: 8px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .banner-small .tagline {
+      font-size: 16px;
+      color: rgba(255,255,255,0.85);
+      font-weight: 500;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ========== 截图样式 1280x800 ========== */
+    .screenshot {
+      width: 1280px;
+      height: 800px;
+      background: linear-gradient(180deg, #f8faf9 0%, #e8f5e9 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      margin-bottom: 20px;
+    }
+
+    .screenshot .title {
+      font-size: 48px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+
+    .screenshot .subtitle {
+      font-size: 24px;
+      color: #666;
+      margin-bottom: 48px;
+    }
+
+    .screenshot .mockup {
+      display: flex;
+      gap: 40px;
+      align-items: flex-start;
+    }
+
+    /* 浏览器窗口样式 */
+    .browser-window {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 80px rgba(0,0,0,0.15);
+      overflow: hidden;
+    }
+
+    .browser-header {
+      height: 48px;
+      background: #f5f5f5;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 8px;
+    }
+
+    .browser-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .browser-dot.red { background: #ff5f57; }
+    .browser-dot.yellow { background: #ffbd2e; }
+    .browser-dot.green { background: #28c840; }
+
+    .browser-url {
+      flex: 1;
+      height: 28px;
+      background: white;
+      border-radius: 6px;
+      margin-left: 12px;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      font-size: 13px;
+      color: #666;
+    }
+
+    .browser-content {
+      padding: 24px;
+      background: #fafafa;
+    }
+
+    /* Popup 模拟 */
+    .popup-mockup {
+      width: 380px;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+      overflow: hidden;
+    }
+
+    .popup-header {
+      background: linear-gradient(135deg, #07c160 0%, #06ad56 100%);
+      padding: 20px;
+      color: white;
+    }
+
+    .popup-header h3 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .popup-header p {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    .popup-platforms {
+      padding: 16px 20px;
+    }
+
+    .popup-platform {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: #f5f5f5;
+      border-radius: 10px;
+      margin-bottom: 8px;
+    }
+
+    .popup-platform.selected {
+      background: #e8f5e9;
+      border: 2px solid #07c160;
+    }
+
+    .popup-platform-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: #ddd;
+    }
+
+    .popup-platform-name {
+      flex: 1;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .popup-check {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #07c160;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .popup-btn {
+      margin: 16px 20px 20px;
+      background: #07c160;
+      color: white;
+      border: none;
+      padding: 14px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      width: calc(100% - 40px);
+    }
+
+    /* ========== 功能截图 ========== */
+    .feature-screenshot {
+      width: 1280px;
+      height: 800px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 80px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-screenshot::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    }
+
+    .feature-text {
+      max-width: 480px;
+      color: white;
+      position: relative;
+      z-index: 1;
+    }
+
+    .feature-text .badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.2);
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 24px;
+    }
+
+    .feature-text h2 {
+      font-size: 56px;
+      font-weight: 800;
+      line-height: 1.1;
+      margin-bottom: 24px;
+    }
+
+    .feature-text p {
+      font-size: 22px;
+      opacity: 0.9;
+      line-height: 1.6;
+    }
+
+    .feature-visual {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* 平台卡片组 */
+    .platform-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .platform-card {
+      width: 140px;
+      height: 140px;
+      background: white;
+      border-radius: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+      transition: transform 0.3s;
+    }
+
+    .platform-card:nth-child(2) {
+      transform: translateY(-20px);
+    }
+
+    .platform-card:nth-child(5) {
+      transform: translateY(-20px);
+    }
+
+    .platform-card img {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+    }
+
+    .platform-card span {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    /* ========== CMS 功能截图 ========== */
+    .cms-screenshot {
+      width: 1280px;
+      height: 800px;
+      background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 80px;
+      position: relative;
+    }
+
+    .cms-visual {
+      display: flex;
+      gap: 30px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .cms-card {
+      width: 200px;
+      background: white;
+      border-radius: 20px;
+      padding: 32px 24px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+
+    .cms-card:nth-child(2) {
+      transform: translateY(-30px);
+    }
+
+    .cms-card img {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 16px;
+    }
+
+    .cms-card h4 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #333;
+      margin-bottom: 8px;
+    }
+
+    .cms-card p {
+      font-size: 13px;
+      color: #666;
+    }
+
+    /* SVG 图标 */
+    .sync-icon {
+      fill: #07c160;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="section-title">1. 大横幅 (1280×800) - 主宣传图</div>
+  <div class="banner-large" id="banner-large">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" class="sync-icon">
+        <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+      </svg>
+    </div>
+    <h1>文章同步助手</h1>
+    <div class="tagline">一键同步到多个内容平台</div>
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">
+          <svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+        </div>
+        13+ 平台支持
+      </div>
+      <div class="feature">
+        <div class="feature-icon">
+          <svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+        </div>
+        WordPress 支持
+      </div>
+      <div class="feature">
+        <div class="feature-icon">
+          <svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+        </div>
+        安全可靠
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">2. 小横幅 (440×280) - 商店瓷片图</div>
+  <div class="banner-small" id="banner-small">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" class="sync-icon">
+        <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+      </svg>
+    </div>
+    <h1>文章同步助手</h1>
+    <div class="tagline">一键同步到 13+ 内容平台</div>
+  </div>
+
+  <div class="section-title">3. 截图1 (1280×800) - 功能展示</div>
+  <div class="screenshot" id="screenshot-1">
+    <div class="title">一键同步，效率翻倍</div>
+    <div class="subtitle">支持知乎、掘金、CSDN、头条号等 13+ 主流平台</div>
+    <div class="mockup">
+      <div class="browser-window" style="width: 700px;">
+        <div class="browser-header">
+          <div class="browser-dot red"></div>
+          <div class="browser-dot yellow"></div>
+          <div class="browser-dot green"></div>
+          <div class="browser-url">mp.weixin.qq.com/cgi-bin/appmsg</div>
+        </div>
+        <div class="browser-content" style="height: 400px; display: flex; align-items: center; justify-content: center;">
+          <div style="text-align: center; color: #999;">
+            <svg width="80" height="80" fill="#07c160" viewBox="0 0 24 24" style="margin-bottom: 16px;"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/></svg>
+            <div style="font-size: 18px; color: #333;">微信公众号编辑器</div>
+            <div style="font-size: 14px; margin-top: 8px;">在此编辑您的文章...</div>
+          </div>
+        </div>
+      </div>
+      <div class="popup-mockup">
+        <div class="popup-header">
+          <h3>文章同步助手</h3>
+          <p>选择要同步的平台</p>
+        </div>
+        <div class="popup-platforms">
+          <div class="popup-platform selected">
+            <div class="popup-platform-icon" style="background: #1e80ff;"></div>
+            <div class="popup-platform-name">知乎</div>
+            <div class="popup-check">
+              <svg width="12" height="12" fill="white" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            </div>
+          </div>
+          <div class="popup-platform selected">
+            <div class="popup-platform-icon" style="background: #1e80ff;"></div>
+            <div class="popup-platform-name">掘金</div>
+            <div class="popup-check">
+              <svg width="12" height="12" fill="white" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            </div>
+          </div>
+          <div class="popup-platform">
+            <div class="popup-platform-icon" style="background: #fc5531;"></div>
+            <div class="popup-platform-name">CSDN</div>
+          </div>
+          <div class="popup-platform">
+            <div class="popup-platform-icon" style="background: #ff6a00;"></div>
+            <div class="popup-platform-name">头条号</div>
+          </div>
+        </div>
+        <button class="popup-btn">同步到 2 个平台</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">4. 截图2 (1280×800) - 多平台支持</div>
+  <div class="feature-screenshot" id="screenshot-2">
+    <div class="feature-text">
+      <div class="badge">🚀 多平台支持</div>
+      <h2>一次编写<br>多处发布</h2>
+      <p>支持知乎、掘金、CSDN、头条号、百家号、微博、雪球等 13+ 主流内容平台，让您的内容触达更多读者。</p>
+    </div>
+    <div class="feature-visual">
+      <div class="platform-cards">
+        <div class="platform-card">
+          <img src="https://static.zhihu.com/heifetz/favicon.ico" alt="知乎">
+          <span>知乎</span>
+        </div>
+        <div class="platform-card">
+          <img src="https://lf3-cdn-tos.bytescm.com/obj/static/xitu_juejin_web/static/favicons/favicon-32x32.png" alt="掘金">
+          <span>掘金</span>
+        </div>
+        <div class="platform-card">
+          <img src="https://g.csdnimg.cn/static/logo/favicon32.ico" alt="CSDN">
+          <span>CSDN</span>
+        </div>
+        <div class="platform-card">
+          <img src="https://sf1-ttcdn-tos.pstatp.com/obj/ttfe/pgcfe/sz/mp_logo.png" alt="头条号">
+          <span>头条号</span>
+        </div>
+        <div class="platform-card">
+          <img src="https://www.baidu.com/favicon.ico" alt="百家号">
+          <span>百家号</span>
+        </div>
+        <div class="platform-card">
+          <img src="https://weibo.com/favicon.ico" alt="微博">
+          <span>微博</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">5. 截图3 (1280×800) - WordPress/CMS 支持</div>
+  <div class="cms-screenshot" id="screenshot-3">
+    <div class="feature-text">
+      <div class="badge" style="background: rgba(255,255,255,0.15);">🔧 自建站点支持</div>
+      <h2>同步到你的<br>WordPress</h2>
+      <p>支持 WordPress、Typecho、MetaWeblog 协议，轻松同步到自建博客，完全掌控你的内容。</p>
+    </div>
+    <div class="cms-visual">
+      <div class="cms-card">
+        <img src="https://s.w.org/style/images/about/WordPress-logotype-simplified.png" alt="WordPress">
+        <h4>WordPress</h4>
+        <p>REST API 支持</p>
+      </div>
+      <div class="cms-card">
+        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect fill='%23333' width='100' height='100' rx='20'/%3E%3Ctext x='50' y='65' text-anchor='middle' fill='white' font-size='40' font-family='Arial' font-weight='bold'%3ET%3C/text%3E%3C/svg%3E" alt="Typecho">
+        <h4>Typecho</h4>
+        <p>XML-RPC 支持</p>
+      </div>
+      <div class="cms-card">
+        <img src="https://www.cnblogs.com/favicon.ico" alt="MetaWeblog">
+        <h4>博客园</h4>
+        <p>MetaWeblog API</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">6. 截图4 (1280×800) - 安全特性</div>
+  <div class="feature-screenshot" id="screenshot-4" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+    <div class="feature-text">
+      <div class="badge">🔒 安全可靠</div>
+      <h2>本地运行<br>数据安全</h2>
+      <p>所有数据本地存储，密码加密保存，不上传任何个人信息。开源透明，代码可审计。</p>
+    </div>
+    <div class="feature-visual">
+      <div style="background: white; border-radius: 24px; padding: 48px; box-shadow: 0 20px 60px rgba(0,0,0,0.2);">
+        <div style="display: flex; flex-direction: column; gap: 24px;">
+          <div style="display: flex; align-items: center; gap: 20px;">
+            <div style="width: 56px; height: 56px; background: #e8f5e9; border-radius: 14px; display: flex; align-items: center; justify-content: center;">
+              <svg width="28" height="28" fill="#07c160" viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
+            </div>
+            <div>
+              <div style="font-size: 18px; font-weight: 600; color: #333;">本地存储</div>
+              <div style="font-size: 14px; color: #666;">数据不离开你的设备</div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 20px;">
+            <div style="width: 56px; height: 56px; background: #e8f5e9; border-radius: 14px; display: flex; align-items: center; justify-content: center;">
+              <svg width="28" height="28" fill="#07c160" viewBox="0 0 24 24"><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65z"/></svg>
+            </div>
+            <div>
+              <div style="font-size: 18px; font-weight: 600; color: #333;">密码加密</div>
+              <div style="font-size: 14px; color: #666;">安全存储登录凭证</div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 20px;">
+            <div style="width: 56px; height: 56px; background: #e8f5e9; border-radius: 14px; display: flex; align-items: center; justify-content: center;">
+              <svg width="28" height="28" fill="#07c160" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+            </div>
+            <div>
+              <div style="font-size: 18px; font-weight: 600; color: #333;">开源透明</div>
+              <div style="font-size: 14px; color: #666;">代码公开可审计</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
