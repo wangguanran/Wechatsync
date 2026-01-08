@@ -19,7 +19,8 @@
     },
     "condition": {
       "urlFilter": "bizapi.csdn.net",
-      "resourceTypes": ["xmlhttprequest"]
+      "resourceTypes": ["xmlhttprequest"],
+      "excludedInitiatorDomains": ["csdn.net"]
     }
   },
   {
@@ -42,7 +43,8 @@
     },
     "condition": {
       "urlFilter": "imgservice.csdn.net",
-      "resourceTypes": ["xmlhttprequest"]
+      "resourceTypes": ["xmlhttprequest"],
+      "excludedInitiatorDomains": ["csdn.net"]
     }
   }
 ]
