@@ -92,12 +92,19 @@ interface PlatformProgress {
   error?: string
 }
 
+type SyncHistoryStatus = 'syncing' | 'completed' | 'failed' | 'cancelled'
+
 interface SyncHistoryItem {
-  id: string
+  id: string  // syncId
+  status: SyncHistoryStatus
   title: string
   cover?: string
-  timestamp: number
+  platforms: string[]  // 选中的平台ID列表
   results: SyncResult[]
+  startTime: number
+  endTime?: number
+  // 兼容旧格式
+  timestamp?: number
 }
 
 interface SyncState {
@@ -108,6 +115,9 @@ interface SyncState {
   selectedPlatforms: string[]
   results: SyncResult[]
   error: string | null
+
+  // 当前同步任务ID（用于过滤消息）
+  currentSyncId: string | null
 
   // 图片上传进度
   imageProgress: ImageProgress | null
@@ -177,6 +187,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   selectedPlatforms: [],
   results: [],
   error: null,
+  currentSyncId: null,
   imageProgress: null,
   platformProgress: new Map(),
   history: [],
@@ -192,13 +203,14 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       const syncState = response?.syncState
 
       if (syncState) {
-        logger.debug('Recovering sync state:', syncState.status)
+        logger.debug('Recovering sync state:', syncState.status, syncState.syncId)
 
         set({
           status: syncState.status,
           article: syncState.article,
           selectedPlatforms: syncState.selectedPlatforms,
           results: syncState.results || [],
+          currentSyncId: syncState.syncId || null,
           recovered: true,
         })
 
@@ -383,13 +395,17 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     // 追踪漏斗：开始同步
     trackFunnel('sync_started', 'popup', { platform_count: selectedPlatforms.length }).catch(() => {})
 
-    set({ status: 'syncing', results: [], error: null, imageProgress: null, platformProgress: new Map() })
+    // 生成 syncId（在发送消息前设置，以便立即过滤消息）
+    const syncId = `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+
+    set({ status: 'syncing', results: [], error: null, imageProgress: null, platformProgress: new Map(), currentSyncId: syncId })
 
     try {
       // SYNC_ARTICLE 现在同时处理 DSL 和 CMS 平台
+      // 传递 syncId 给 background，background 会用这个 ID
       const response = await chrome.runtime.sendMessage({
         type: 'SYNC_ARTICLE',
-        payload: { article, platforms: selectedPlatforms },
+        payload: { article, platforms: selectedPlatforms, syncId },
       })
 
       const allResults: SyncResult[] = response.results || []
@@ -463,13 +479,16 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     // 追踪重试行为
     trackRetry('popup', failedPlatformIds, 2, failedPlatformIds.length).catch(() => {})
 
-    set({ status: 'syncing', results: successResults, error: null, imageProgress: null })
+    // 生成新的 syncId
+    const syncId = `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+
+    set({ status: 'syncing', results: successResults, error: null, imageProgress: null, platformProgress: new Map(), currentSyncId: syncId })
 
     try {
       // SYNC_ARTICLE 现在同时处理 DSL 和 CMS 平台
       const response = await chrome.runtime.sendMessage({
         type: 'SYNC_ARTICLE',
-        payload: { article, platforms: failedPlatformIds, skipHistory: true },
+        payload: { article, platforms: failedPlatformIds, skipHistory: true, syncId },
       })
 
       const retryResults: SyncResult[] = response.results || []
@@ -557,6 +576,15 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
 // 监听来自 background 的进度消息
 chrome.runtime.onMessage.addListener((message) => {
+  // 获取当前 syncId，只处理匹配的消息
+  const { currentSyncId } = useSyncStore.getState()
+
+  // 如果消息带有 syncId，需要匹配当前的 syncId
+  if (message.syncId && currentSyncId && message.syncId !== currentSyncId) {
+    logger.debug('Ignoring message with different syncId:', message.syncId, 'current:', currentSyncId)
+    return
+  }
+
   if (message.type === 'SYNC_PROGRESS') {
     const result = message.payload?.result
     if (result) {

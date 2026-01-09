@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, CheckCircle, XCircle, ExternalLink, Clock, Trash2, ImageIcon } from 'lucide-react'
+import { ArrowLeft, CheckCircle, XCircle, ExternalLink, Clock, Trash2, ImageIcon, Loader2 } from 'lucide-react'
 import { useSyncStore } from '../stores/sync'
 import { Button } from '../components/ui/Button'
 import { trackPageView } from '../../lib/analytics'
@@ -123,21 +123,35 @@ export function HistoryPage() {
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <h3 className="font-medium text-sm line-clamp-2">{item.title}</h3>
                     <span className="text-xs text-muted-foreground whitespace-nowrap">
-                      {formatTime(item.timestamp)}
+                      {formatTime(item.startTime ?? item.timestamp ?? Date.now())}
                     </span>
                   </div>
 
                   {/* 统计 */}
                   <div className="flex items-center gap-3 text-xs">
-                    <div className="flex items-center gap-1 text-green-600">
-                      <CheckCircle className="w-3.5 h-3.5" />
-                      <span>{successCount} 成功</span>
-                    </div>
-                    {failedCount > 0 && (
-                      <div className="flex items-center gap-1 text-red-600">
-                        <XCircle className="w-3.5 h-3.5" />
-                        <span>{failedCount} 失败</span>
+                    {item.status === 'syncing' ? (
+                      <div className="flex items-center gap-1 text-blue-600">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>同步中...</span>
                       </div>
+                    ) : item.status === 'cancelled' ? (
+                      <div className="flex items-center gap-1 text-gray-500">
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>已取消</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-1 text-green-600">
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          <span>{successCount} 成功</span>
+                        </div>
+                        {failedCount > 0 && (
+                          <div className="flex items-center gap-1 text-red-600">
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>{failedCount} 失败</span>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
 

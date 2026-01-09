@@ -61,6 +61,13 @@ export function EditorApp() {
   const [error, setError] = useState<string | null>(null)
   const [rateLimitWarning, setRateLimitWarning] = useState<string | null>(null)
   const [platformProgress, setPlatformProgress] = useState<Map<string, PlatformProgress>>(new Map())
+  const [currentSyncId, setCurrentSyncId] = useState<string | null>(null)
+  const currentSyncIdRef = useRef<string | null>(null)
+
+  // 保持 ref 与 state 同步
+  useEffect(() => {
+    currentSyncIdRef.current = currentSyncId
+  }, [currentSyncId])
 
   const titleRef = useRef<HTMLHeadingElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -70,6 +77,19 @@ export function EditorApp() {
     const handleMessage = (event: MessageEvent) => {
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
+
+        // 如果消息带有 syncId，需要匹配当前的 syncId
+        if (data.syncId) {
+          // 如果当前没有 syncId，保存这个 syncId（新同步开始）
+          if (!currentSyncIdRef.current) {
+            setCurrentSyncId(data.syncId)
+          } else if (data.syncId !== currentSyncIdRef.current) {
+            // 如果已有 syncId 且不匹配，忽略消息
+            logger.debug('Ignoring message with different syncId:', data.syncId, 'current:', currentSyncIdRef.current)
+            return
+          }
+        }
+
         logger.debug('Received message:', data)
 
         if (data.type === 'ARTICLE_DATA') {
@@ -161,16 +181,21 @@ export function EditorApp() {
       content: contentRef.current?.innerHTML || article.content,
     }
 
+    // 生成 syncId（在发送消息前设置，以便立即过滤消息）
+    const syncId = `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    setCurrentSyncId(syncId)
+
     setStatus('syncing')
     setResults([])
     setError(null)
     setPlatformProgress(new Map())
 
-    // 发送同步请求到父窗口
+    // 发送同步请求到父窗口（带上 syncId）
     window.parent.postMessage(JSON.stringify({
       type: 'START_SYNC',
       article: editedArticle,
       platforms: Array.from(selectedPlatforms),
+      syncId,
     }), '*')
   }
 
@@ -185,13 +210,19 @@ export function EditorApp() {
       content: contentRef.current?.innerHTML || article!.content,
     }
 
+    // 生成新的 syncId
+    const syncId = `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    setCurrentSyncId(syncId)
+
     setStatus('syncing')
     setResults(prev => prev.filter(r => r.success))
+    setPlatformProgress(new Map()) // 清空进度
 
     window.parent.postMessage(JSON.stringify({
       type: 'START_SYNC',
       article: editedArticle,
       platforms: failedPlatforms,
+      syncId,
     }), '*')
   }
 

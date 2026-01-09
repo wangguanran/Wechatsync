@@ -29,6 +29,7 @@ interface SyncState {
   results: Array<{ platform: string; success: boolean; postUrl?: string; error?: string }>
   platformProgress: Map<string, PlatformProgress>
   selectedPlatforms: string[]
+  currentSyncId: string | null
 }
 
 const state: SyncState = {
@@ -37,6 +38,7 @@ const state: SyncState = {
   results: [],
   platformProgress: new Map(),
   selectedPlatforms: [],
+  currentSyncId: null,
 }
 
 function injectSyncButton() {
@@ -631,10 +633,14 @@ function injectSyncButton() {
     // 保存平台选择偏好
     await chrome.storage.local.set({ lastSelectedPlatforms: selectedPlatforms })
 
+    // 生成 syncId（在发送消息前设置，以便立即过滤消息）
+    const syncId = `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+
     // 更新状态
     state.status = 'syncing'
     state.results = []
     state.platformProgress.clear()
+    state.currentSyncId = syncId
     mainBtn.classList.add('syncing')
     mainBtn.classList.remove('success', 'error')
     syncBtn.disabled = true
@@ -650,7 +656,7 @@ function injectSyncButton() {
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'SYNC_ARTICLE',
-        payload: { article, platforms: selectedPlatforms, source: 'weixin' },
+        payload: { article, platforms: selectedPlatforms, source: 'weixin', syncId },
       })
 
       state.results = response.results || []
@@ -820,6 +826,11 @@ function injectSyncButton() {
 
   // 监听来自 background 的进度消息
   chrome.runtime.onMessage.addListener((message) => {
+    // 如果消息带有 syncId，需要匹配当前的 syncId
+    if (message.syncId && state.currentSyncId && message.syncId !== state.currentSyncId) {
+      return // 忽略不匹配的消息
+    }
+
     if (message.type === 'SYNC_DETAIL_PROGRESS') {
       const progress = message.payload
       if (progress?.platform) {

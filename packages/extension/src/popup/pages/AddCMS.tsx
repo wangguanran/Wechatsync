@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Globe, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Globe, Loader2 } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { useCMSStore, type CMSType } from '../stores/cms'
 import { trackPageView, trackPlatformExpansion } from '../../lib/analytics'
@@ -33,21 +33,13 @@ const cmsOptions: CMSOption[] = [
   },
 ]
 
-// 支持的第三方平台列表
-const supportedPlatforms = [
-  { name: '知乎', url: 'https://www.zhihu.com', icon: 'https://static.zhihu.com/heifetz/favicon.ico' },
-  { name: '掘金', url: 'https://juejin.cn', icon: 'https://lf3-cdn-tos.bytescm.com/obj/static/xitu_juejin_web/static/favicons/favicon-32x32.png' },
-  { name: 'CSDN', url: 'https://blog.csdn.net', icon: 'https://g.csdnimg.cn/static/logo/favicon32.ico' },
-  { name: '今日头条', url: 'https://mp.toutiao.com', icon: 'https://sf1-cdn-tos.toutiaostatic.com/obj/ttfe/pgcfe/sz/mp_logo.png' },
-  { name: '百家号', url: 'https://baijiahao.baidu.com', icon: 'https://pic.rmb.bdstatic.com/10aborede5e85e725f488058cae625571c56.png' },
-  { name: 'B站专栏', url: 'https://member.bilibili.com/article-text/home', icon: 'https://www.bilibili.com/favicon.ico' },
-  { name: '微博', url: 'https://weibo.com', icon: 'https://weibo.com/favicon.ico' },
-  { name: '搜狐号', url: 'https://mp.sohu.com', icon: 'https://mp.sohu.com/favicon.ico' },
-  { name: '语雀', url: 'https://www.yuque.com', icon: 'https://mdn.alipayobjects.com/huamei_0prmtq/afts/img/A*vMxOQIh4KBMAAAAAAAAAAAAADvuFAQ/original' },
-  { name: '雪球', url: 'https://xueqiu.com', icon: 'https://xueqiu.com/favicon.ico' },
-  { name: '人人都是PM', url: 'https://www.woshipm.com', icon: 'https://www.woshipm.com/favicon.ico' },
-  { name: '豆瓣', url: 'https://www.douban.com', icon: 'https://www.douban.com/favicon.ico' },
-]
+// 第三方平台类型（从 adapter registry 获取）
+interface ThirdPartyPlatform {
+  id: string
+  name: string
+  icon: string
+  homepage: string
+}
 
 export function AddCMSPage() {
   const navigate = useNavigate()
@@ -63,9 +55,32 @@ export function AddCMSPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // 追踪页面访问
+  // 第三方平台列表（从 adapter registry 动态获取）
+  const [thirdPartyPlatforms, setThirdPartyPlatforms] = useState<ThirdPartyPlatform[]>([])
+  const [platformsLoading, setPlatformsLoading] = useState(true)
+
+  // 加载平台列表和追踪页面访问
   useEffect(() => {
     trackPageView('add_cms').catch(() => {})
+
+    // 从 adapter registry 获取平台列表
+    chrome.runtime.sendMessage({ type: 'GET_PLATFORMS' }).then((response) => {
+      if (response?.platforms) {
+        // 过滤掉 weixin（源平台）
+        const platforms = response.platforms
+          .filter((p: ThirdPartyPlatform) => p.id !== 'weixin')
+          .map((p: ThirdPartyPlatform) => ({
+            id: p.id,
+            name: p.name,
+            icon: p.icon,
+            homepage: p.homepage,
+          }))
+        setThirdPartyPlatforms(platforms)
+      }
+      setPlatformsLoading(false)
+    }).catch(() => {
+      setPlatformsLoading(false)
+    })
   }, [])
 
   const handleSelectCMS = (cmsId: CMSType) => {
@@ -157,28 +172,34 @@ export function AddCMSPage() {
               点击前往登录，登录后自动识别
             </p>
 
-            <div className="grid grid-cols-4 gap-2">
-              {supportedPlatforms.map(platform => (
-                <button
-                  key={platform.name}
-                  onClick={() => chrome.tabs.create({ url: platform.url })}
-                  className="flex flex-col items-center gap-1 p-2 rounded-lg hover:bg-muted transition-colors"
-                  title={`前往 ${platform.name} 登录`}
-                >
-                  <img
-                    src={platform.icon}
-                    alt={platform.name}
-                    className="w-6 h-6 rounded"
-                    onError={e => {
-                      (e.target as HTMLImageElement).src = '/assets/icon-48.png'
-                    }}
-                  />
-                  <span className="text-[10px] text-muted-foreground truncate w-full text-center">
-                    {platform.name}
-                  </span>
-                </button>
-              ))}
-            </div>
+            {platformsLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-2">
+                {thirdPartyPlatforms.map(platform => (
+                  <button
+                    key={platform.id}
+                    onClick={() => chrome.tabs.create({ url: platform.homepage })}
+                    className="flex flex-col items-center gap-1 p-2 rounded-lg hover:bg-muted transition-colors"
+                    title={`前往 ${platform.name} 登录`}
+                  >
+                    <img
+                      src={platform.icon}
+                      alt={platform.name}
+                      className="w-6 h-6 rounded"
+                      onError={e => {
+                        (e.target as HTMLImageElement).src = '/assets/icon-48.png'
+                      }}
+                    />
+                    <span className="text-[10px] text-muted-foreground truncate w-full text-center">
+                      {platform.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

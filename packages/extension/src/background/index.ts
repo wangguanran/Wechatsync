@@ -125,7 +125,7 @@ type MessageAction =
   | { type: 'GET_PLATFORMS' }
   | { type: 'CHECK_ALL_AUTH'; payload?: { forceRefresh?: boolean } }
   | { type: 'CHECK_AUTH'; payload: { platformId: string } }
-  | { type: 'SYNC_ARTICLE'; payload: { article: any; platforms: string[]; allSelectedPlatforms?: string[]; skipHistory?: boolean; source?: string } }
+  | { type: 'SYNC_ARTICLE'; payload: { article: any; platforms: string[]; allSelectedPlatforms?: string[]; skipHistory?: boolean; source?: string; syncId?: string } }
   | { type: 'OPEN_SYNC_PAGE'; path?: string }
   | { type: 'TEST_CMS_CONNECTION'; payload: { type: CMSType; url: string; username: string; password: string } }
   | { type: 'SYNC_TO_CMS'; payload: { accountId: string; article: any } }
@@ -137,7 +137,7 @@ type MessageAction =
   | { type: 'CLEAR_SYNC_STATE' }
   | { type: 'UPDATE_SYNC_STATUS'; payload: { status: 'syncing' | 'completed' } }
   | { type: 'CANCEL_SYNC' }
-  | { type: 'START_SYNC_FROM_EDITOR'; article: any; platforms: string[] }
+  | { type: 'START_SYNC_FROM_EDITOR'; article: any; platforms: string[]; syncId?: string }
 
 /**
  * 消息处理
@@ -194,11 +194,11 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
     }
 
     case 'SYNC_ARTICLE': {
-      const { article, platforms, allSelectedPlatforms, skipHistory, source = 'popup' } = message.payload
+      const { article, platforms, allSelectedPlatforms, skipHistory, source = 'popup', syncId: passedSyncId } = message.payload
       const allPlatformMetas = getAllPlatformMetas()
 
-      // 生成唯一同步ID
-      const syncId = generateSyncId()
+      // 使用传入的 syncId 或生成新的
+      const syncId = passedSyncId || generateSyncId()
 
       // 获取发送消息的 tabId（如果来自 content script）
       const senderTabId = sender?.tab?.id
@@ -612,7 +612,7 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
     }
 
     case 'START_SYNC_FROM_EDITOR': {
-      const { article, platforms } = message
+      const { article, platforms, syncId: passedSyncId } = message
       const tabId = sender?.tab?.id
       const allPlatformMetas = getAllPlatformMetas()
 
@@ -620,8 +620,8 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
         return { error: 'No tab ID found' }
       }
 
-      // 生成唯一同步ID
-      const syncId = generateSyncId()
+      // 使用传入的 syncId 或生成新的
+      const syncId = passedSyncId || generateSyncId()
 
       // 辅助函数：发送消息到 tab（带 syncId）
       const sendToTab = (msg: Record<string, unknown>) => {
@@ -723,19 +723,19 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
             allResults.push(cmsResult)
             syncState.results.push(cmsResult)
             saveSyncState(syncState).catch(() => {})
-            chrome.tabs.sendMessage(tabId, { type: 'SYNC_PROGRESS', result: cmsResult }).catch(() => {})
-            chrome.tabs.sendMessage(tabId, {
+            sendToTab({ type: 'SYNC_PROGRESS', result: cmsResult })
+            sendToTab({
               type: 'SYNC_DETAIL_PROGRESS',
               platform: accountId, platformName: account.name, stage: 'failed', result: cmsResult, error: '密码未找到',
-            }).catch(() => {})
+            })
             continue
           }
 
           // 发送保存阶段
-          chrome.tabs.sendMessage(tabId, {
+          sendToTab({
             type: 'SYNC_DETAIL_PROGRESS',
             platform: accountId, platformName: account.name, stage: 'saving',
-          }).catch(() => {})
+          })
 
           const credentials = { url: account.url, username: account.username, password }
           let result
@@ -764,15 +764,15 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
           allResults.push(cmsResult)
           syncState.results.push(cmsResult)
           saveSyncState(syncState).catch(() => {})
-          chrome.tabs.sendMessage(tabId, { type: 'SYNC_PROGRESS', result: cmsResult }).catch(() => {})
-          chrome.tabs.sendMessage(tabId, {
+          sendToTab({ type: 'SYNC_PROGRESS', result: cmsResult })
+          sendToTab({
             type: 'SYNC_DETAIL_PROGRESS',
             platform: accountId,
             platformName: account.name,
             stage: result.success ? 'completed' : 'failed',
             result: cmsResult,
             error: result.error,
-          }).catch(() => {})
+          })
         } catch (error) {
           const cmsResult = {
             platform: accountId,
@@ -783,28 +783,33 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
           allResults.push(cmsResult)
           syncState.results.push(cmsResult)
           saveSyncState(syncState).catch(() => {})
-          chrome.tabs.sendMessage(tabId, { type: 'SYNC_PROGRESS', result: cmsResult }).catch(() => {})
-          chrome.tabs.sendMessage(tabId, {
+          sendToTab({ type: 'SYNC_PROGRESS', result: cmsResult })
+          sendToTab({
             type: 'SYNC_DETAIL_PROGRESS',
             platform: accountId, platformName: account.name, stage: 'failed', result: cmsResult, error: (error as Error).message,
-          }).catch(() => {})
+          })
         }
       }
 
+      // 确定最终状态
+      const successCount = allResults.filter(r => r.success).length
+      const failedCount = allResults.length - successCount
+      const finalStatus: SyncHistoryStatus = failedCount === allResults.length ? 'failed' : 'completed'
+
       // 更新为完成状态
-      syncState.status = 'completed'
+      syncState.status = finalStatus
       await saveSyncState(syncState)
 
-      // 通知编辑器同步完成
-      chrome.tabs.sendMessage(tabId, {
+      // 通知编辑器同步完成（带上 syncId）
+      sendToTab({
         type: 'SYNC_COMPLETE',
         rateLimitWarning,
-      }).catch(() => {})
+      })
 
-      // 保存到历史
-      await saveToHistory(article, allResults, allPlatformMetas)
+      // 更新历史记录
+      await updateHistoryItem(syncId, finalStatus, allResults, allPlatformMetas)
 
-      return { results: allResults, rateLimitWarning }
+      return { results: allResults, rateLimitWarning, syncId }
     }
 
     default:

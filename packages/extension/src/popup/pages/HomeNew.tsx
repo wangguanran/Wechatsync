@@ -257,7 +257,7 @@ export function HomeNew() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm truncate">{item.title}</p>
                         <p className="text-xs text-muted-foreground">
-                          {new Date(item.timestamp).toLocaleDateString()}
+                          {new Date(item.startTime ?? item.timestamp ?? Date.now()).toLocaleDateString()}
                         </p>
                       </div>
                       <span className={cn(

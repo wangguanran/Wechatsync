@@ -392,6 +392,7 @@ window.addEventListener('message', async (event) => {
           markdown: markdownContent,
         },
         platforms: data.platforms,
+        syncId: data.syncId,  // 转发 syncId
       })
     }
   } catch (e) {
@@ -417,13 +418,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse({ success: false, error: '无法提取文章内容' })
     }
   } else if (message.type === 'SYNC_PROGRESS') {
-    // 转发同步进度到编辑器
+    // 转发同步进度到编辑器（带上 syncId）
     editorIframe?.contentWindow?.postMessage(JSON.stringify({
       type: 'SYNC_PROGRESS',
       result: message.result,
+      syncId: message.syncId,
     }), '*')
   } else if (message.type === 'SYNC_DETAIL_PROGRESS') {
-    // 转发详细进度到编辑器
+    // 转发详细进度到编辑器（带上 syncId）
     // 兼容两种格式：message.payload (from SYNC_ARTICLE) 或直接展开 (from START_SYNC_FROM_EDITOR)
     const progress = message.payload || {
       platform: message.platform,
@@ -436,18 +438,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     editorIframe?.contentWindow?.postMessage(JSON.stringify({
       type: 'SYNC_DETAIL_PROGRESS',
       progress,
+      syncId: message.syncId,
     }), '*')
   } else if (message.type === 'SYNC_COMPLETE') {
-    // 同步完成
+    // 同步完成（带上 syncId）
     editorIframe?.contentWindow?.postMessage(JSON.stringify({
       type: 'SYNC_COMPLETE',
       rateLimitWarning: message.rateLimitWarning,
+      syncId: message.syncId,
     }), '*')
   } else if (message.type === 'SYNC_ERROR') {
-    // 同步错误
+    // 同步错误（带上 syncId）
     editorIframe?.contentWindow?.postMessage(JSON.stringify({
       type: 'SYNC_ERROR',
       error: message.error,
+      syncId: message.syncId,
     }), '*')
   }
   return true

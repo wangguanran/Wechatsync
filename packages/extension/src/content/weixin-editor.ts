@@ -42,6 +42,7 @@ interface State {
   results: SyncResult[]
   collapsed: boolean
   platformProgress: Map<string, PlatformProgress>
+  currentSyncId: string | null
 }
 
 const state: State = {
@@ -51,6 +52,7 @@ const state: State = {
   results: [],
   collapsed: true, // 默认收起
   platformProgress: new Map(),
+  currentSyncId: null,
 }
 
 // 检查是否是编辑页面
@@ -839,9 +841,13 @@ async function startSync() {
 
   await chrome.storage.local.set({ lastSelectedPlatforms: state.selectedPlatforms })
 
+  // 生成 syncId（在发送消息前设置，以便立即过滤消息）
+  const syncId = `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+
   // 清除之前的进度状态
   state.results = []
   state.platformProgress.clear()
+  state.currentSyncId = syncId
 
   renderView('syncing')
 
@@ -849,7 +855,7 @@ async function startSync() {
     // SYNC_ARTICLE 现在同时处理 DSL 和 CMS 平台
     const response = await chrome.runtime.sendMessage({
       type: 'SYNC_ARTICLE',
-      payload: { article, platforms: state.selectedPlatforms, source: 'weixin-editor' },
+      payload: { article, platforms: state.selectedPlatforms, source: 'weixin-editor', syncId },
     })
 
     state.results = response.results || []
@@ -1027,6 +1033,11 @@ async function fetchArticleByApi(appmsgid: string): Promise<any | null> {
 
 // 监听来自 background 的进度消息
 chrome.runtime.onMessage.addListener((message) => {
+  // 如果消息带有 syncId，需要匹配当前的 syncId
+  if (message.syncId && state.currentSyncId && message.syncId !== state.currentSyncId) {
+    return // 忽略不匹配的消息
+  }
+
   if (message.type === 'SYNC_DETAIL_PROGRESS') {
     const progress = message.payload
     if (progress?.platform) {
