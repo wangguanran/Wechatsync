@@ -184,6 +184,13 @@ export class JuejinAdapter extends CodeAdapter {
   }
 
   /**
+   * 通过 Blob 上传图片（覆盖基类方法）
+   */
+  async uploadImage(file: Blob, _filename?: string): Promise<string> {
+    return this.uploadImageBinaryInternal(file)
+  }
+
+  /**
    * 通过 URL 上传图片
    * 支持远程 URL 和 data URI
    */
@@ -193,8 +200,8 @@ export class JuejinAdapter extends CodeAdapter {
       if (src.startsWith('data:')) {
         logger.debug('Detected data URI, using binary upload')
         const blob = await fetch(src).then(r => r.blob())
-        const result = await this.uploadImageBinary(blob)
-        return { url: result.url }
+        const url = await this.uploadImageBinaryInternal(blob)
+        return { url }
       }
 
       // 远程 URL 使用掘金 URL 上传 API
@@ -222,7 +229,7 @@ export class JuejinAdapter extends CodeAdapter {
   /**
    * 上传图片 (二进制方式) - 内部使用
    */
-  private async uploadImageBinary(file: Blob): Promise<{ url: string }> {
+  private async uploadImageBinaryInternal(file: Blob): Promise<string> {
     const csrfToken = await this.getCsrfToken()
 
     const formData = new FormData()
@@ -246,7 +253,7 @@ export class JuejinAdapter extends CodeAdapter {
       throw new Error(data.err_msg || 'Failed to upload image')
     }
 
-    return { url: data.data.url }
+    return data.data.url
   }
 
   /**

@@ -14,6 +14,8 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import express, { type Request, type Response } from 'express'
+import fs from 'fs'
+import path from 'path'
 import { ExtensionBridge } from './ws-bridge.js'
 import type { PlatformInfo, SyncResult } from './types.js'
 
@@ -113,25 +115,21 @@ function createServer(): Server {
           },
         },
         {
-          name: 'upload_image',
-          description: '上传图片到图床平台，返回可公开访问的 URL。用于处理本地图片：先读取图片文件转为 base64，调用此接口上传，获取远程 URL 后替换到文章中。',
+          name: 'upload_image_file',
+          description: '从本地文件路径上传图片到图床平台，返回可公开访问的 URL。推荐使用此方法，无需手动转换 base64。',
           inputSchema: {
             type: 'object',
             properties: {
-              imageData: {
+              filePath: {
                 type: 'string',
-                description: '图片的 base64 数据（不含 data: 前缀），如 iVBORw0KGgo...',
-              },
-              mimeType: {
-                type: 'string',
-                description: '图片 MIME 类型，如 image/png, image/jpeg, image/gif',
+                description: '本地图片文件的绝对路径，如 /Users/xxx/image.png',
               },
               platform: {
                 type: 'string',
-                description: '上传到哪个平台作为图床，默认 weibo。可选: weibo, zhihu',
+                description: '上传到哪个平台作为图床，默认 weibo。可选: weibo, zhihu, juejin, jianshu, woshipm',
               },
             },
-            required: ['imageData', 'mimeType'],
+            required: ['filePath'],
           },
         },
       ],
@@ -189,13 +187,36 @@ function createServer(): Server {
           result = await bridge.request('extractArticle')
           break
 
-        case 'upload_image':
-          result = await bridge.request('uploadImage', {
-            imageData: (args as { imageData: string }).imageData,
-            mimeType: (args as { mimeType: string }).mimeType,
-            platform: (args as { platform?: string }).platform || 'weibo',
-          })
+        case 'upload_image_file': {
+          // 从文件路径读取图片并上传
+          const filePath = (args as { filePath: string }).filePath
+          const platform = (args as { platform?: string }).platform || 'weibo'
+
+          // 检查文件是否存在
+          if (!fs.existsSync(filePath)) {
+            throw new Error(`File not found: ${filePath}`)
+          }
+
+          // 读取文件并转为 base64
+          const fileBuffer = fs.readFileSync(filePath)
+          const imageData = fileBuffer.toString('base64')
+
+          // 根据扩展名确定 MIME 类型
+          const ext = path.extname(filePath).toLowerCase()
+          const mimeTypes: Record<string, string> = {
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp',
+            '.svg': 'image/svg+xml',
+          }
+          const mimeType = mimeTypes[ext] || 'image/png'
+
+          // 使用分片上传
+          result = await bridge.uploadImageChunked(imageData, mimeType, platform)
           break
+        }
 
         default:
           return {

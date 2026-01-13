@@ -257,6 +257,44 @@ export abstract class CodeAdapter implements PlatformAdapter {
     throw new Error('uploadImageByUrl not implemented')
   }
 
+  /**
+   * 通过 Blob 上传图片（公开方法，实现 PlatformAdapter 接口）
+   * 默认实现：转为 data URI，调用 uploadImageByUrl
+   * 子类可以覆盖以提供更优的实现
+   */
+  async uploadImage(file: Blob, _filename?: string): Promise<string> {
+    const dataUri = await this.blobToDataUri(file)
+    const result = await this.uploadImageByUrl(dataUri)
+    return result.url
+  }
+
+  /**
+   * Blob 转 data URI
+   */
+  protected async blobToDataUri(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result
+        if (typeof result === 'string') {
+          resolve(result)
+        } else {
+          reject(new Error('Failed to read blob as data URI'))
+        }
+      }
+      reader.onerror = () => reject(new Error('FileReader error'))
+      reader.readAsDataURL(blob)
+    })
+  }
+
+  /**
+   * data URI 转 Blob
+   */
+  protected async dataUriToBlob(dataUri: string): Promise<Blob> {
+    const response = await fetch(dataUri)
+    return response.blob()
+  }
+
   // ============ HTML 处理能力 ============
 
   /**

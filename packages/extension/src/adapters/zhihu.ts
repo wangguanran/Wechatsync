@@ -255,6 +255,13 @@ export class ZhihuAdapter extends CodeAdapter {
   }
 
   /**
+   * 通过 Blob 上传图片（覆盖基类方法）
+   */
+  async uploadImage(file: Blob, _filename?: string): Promise<string> {
+    return this.uploadImageBinaryInternal(file)
+  }
+
+  /**
    * 通过 URL 上传图片
    * 支持远程 URL 和 data URI
    */
@@ -263,8 +270,8 @@ export class ZhihuAdapter extends CodeAdapter {
     if (src.startsWith('data:')) {
       logger.debug('Detected data URI, using binary upload')
       const blob = await fetch(src).then(r => r.blob())
-      const result = await this.uploadImageBinary(blob)
-      return { url: result.url }
+      const url = await this.uploadImageBinaryInternal(blob)
+      return { url }
     }
 
     // 远程 URL 使用知乎 URL 上传 API
@@ -293,7 +300,7 @@ export class ZhihuAdapter extends CodeAdapter {
   /**
    * 上传图片 (二进制方式) - 内部使用
    */
-  private async uploadImageBinary(file: Blob): Promise<{ id: string; object_key: string; url: string }> {
+  private async uploadImageBinaryInternal(file: Blob): Promise<string> {
     // 1. 计算图片 hash
     const buffer = await file.arrayBuffer()
     const imageHash = jsMd5(buffer)
@@ -329,12 +336,7 @@ export class ZhihuAdapter extends CodeAdapter {
     if (uploadFile.state === 1) {
       const imgDetail = await this.waitForImageReady(uploadFile.image_id)
       const objectKey = imgDetail.original_hash
-
-      return {
-        id: objectKey,
-        object_key: objectKey,
-        url: `https://pic4.zhimg.com/${objectKey}`,
-      }
+      return `https://pic4.zhimg.com/${objectKey}`
     }
 
     // 4. 上传到 OSS
@@ -352,11 +354,7 @@ export class ZhihuAdapter extends CodeAdapter {
       objectKey = objectKey + '.gif'
     }
 
-    return {
-      id: objectKey,
-      object_key: objectKey,
-      url: `https://pic4.zhimg.com/${objectKey}`,
-    }
+    return `https://pic4.zhimg.com/${objectKey}`
   }
 
   /**
@@ -380,7 +378,7 @@ export class ZhihuAdapter extends CodeAdapter {
   }
 
   /**
-   * OSS 上传
+   * OSS 上传 - 手动 V1 签名
    */
   private async ossUpload(
     endpoint: string,
@@ -388,22 +386,106 @@ export class ZhihuAdapter extends CodeAdapter {
     blob: Blob,
     token: { access_id: string; access_key: string; access_token: string }
   ): Promise<void> {
-    const date = new Date().toUTCString()
     const contentType = blob.type || 'application/octet-stream'
     const url = `${endpoint}/${objectKey}`
 
-    const response = await fetch(url, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': contentType,
-        'x-oss-security-token': token.access_token,
-        'Date': date,
-      },
-      body: blob,
-    })
+    // OSS 日期格式 (GMT)
+    const ossDate = new Date().toUTCString()
+    const ossUserAgent = 'aliyun-sdk-js/6.8.0'
 
-    if (!response.ok) {
-      throw new Error(`OSS upload failed: ${response.status}`)
+    // 构建 CanonicalizedOSSHeaders (按字母顺序排列，每行以\n结尾)
+    const ossHeaders: Record<string, string> = {
+      'x-oss-date': ossDate,
+      'x-oss-security-token': token.access_token,
+      'x-oss-user-agent': ossUserAgent,
     }
+    // 按字母顺序排序，每个 header 以 \n 结尾
+    const canonicalizedOSSHeaders = Object.keys(ossHeaders)
+      .sort()
+      .map(key => `${key}:${ossHeaders[key]}`)
+      .join('\n')
+
+    // CanonicalizedResource: /bucket/object-key
+    // bucket 名是 zhihu-pics (不是 zhihu-pics-upload)
+    const bucket = 'zhihu-pics'
+    const canonicalizedResource = `/${bucket}/${objectKey}`
+
+    // 构建待签名字符串
+    // VERB + "\n" + Content-MD5 + "\n" + Content-Type + "\n" + Date + "\n" + CanonicalizedOSSHeaders + "\n" + CanonicalizedResource
+    const stringToSign =
+      'PUT\n' +
+      '\n' +  // Content-MD5 (空)
+      contentType + '\n' +
+      ossDate + '\n' +  // Date (与 x-oss-date 相同)
+      canonicalizedOSSHeaders + '\n' +
+      canonicalizedResource
+
+    // 计算 HMAC-SHA1 签名
+    const signature = await this.hmacSha1Base64(token.access_key, stringToSign)
+    const authorization = `OSS ${token.access_id}:${signature}`
+
+    logger.debug('OSS stringToSign:', JSON.stringify(stringToSign))
+    logger.debug('OSS authorization:', authorization)
+
+    // 添加 header 规则来设置正确的 Origin
+    let ruleId: string | undefined
+    try {
+      if (this.runtime.headerRules) {
+        ruleId = await this.runtime.headerRules.add({
+          urlFilter: '*zhimg.com*',
+          headers: {
+            'Origin': 'https://zhuanlan.zhihu.com',
+            'Referer': 'https://zhuanlan.zhihu.com/',
+          },
+          resourceTypes: ['xmlhttprequest'],
+        })
+        logger.debug('Added header rule for OSS upload:', ruleId)
+      }
+
+      const response = await this.runtime.fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': contentType,
+          'Authorization': authorization,
+          'x-oss-date': ossDate,
+          'x-oss-security-token': token.access_token,
+          'x-oss-user-agent': 'aliyun-sdk-js/6.8.0',
+        },
+        body: blob,
+      })
+
+      if (!response.ok) {
+        const text = await response.text()
+        logger.error('OSS upload failed:', response.status, text)
+        throw new Error(`OSS upload failed: ${response.status}`)
+      }
+      logger.debug('OSS upload success')
+    } finally {
+      // 清理 header 规则
+      if (ruleId && this.runtime.headerRules) {
+        await this.runtime.headerRules.remove(ruleId)
+        logger.debug('Removed header rule:', ruleId)
+      }
+    }
+  }
+
+  /**
+   * HMAC-SHA1 签名并返回 Base64 (使用 Web Crypto API)
+   */
+  private async hmacSha1Base64(key: string, message: string): Promise<string> {
+    const encoder = new TextEncoder()
+    const keyData = encoder.encode(key)
+    const messageData = encoder.encode(message)
+
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-1' },
+      false,
+      ['sign']
+    )
+
+    const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData)
+    return btoa(String.fromCharCode(...new Uint8Array(signature)))
   }
 }

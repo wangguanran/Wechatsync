@@ -8,6 +8,7 @@ import {
 } from '../adapters'
 import { markdownToHtml } from '@wechatsync/core'
 import { createLogger } from '../lib/logger'
+import { performSync } from '../background/sync-service'
 
 const logger = createLogger('MCPClient')
 
@@ -28,6 +29,16 @@ interface ResponseMessage {
   }
 }
 
+// 分片上传会话
+interface PendingUpload {
+  chunks: Map<number, string>  // chunkIndex -> data
+  totalChunks: number
+  mimeType: string
+  platform: string
+  createdAt: number
+  timeoutId: ReturnType<typeof setTimeout>
+}
+
 class McpClient {
   private ws: WebSocket | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -41,6 +52,11 @@ class McpClient {
   private readonly minReconnectInterval = 1000 // 1 秒
   private readonly maxReconnectInterval = 30000 // 30 秒
   private readonly maxReconnectAttempts = 100 // 最大尝试次数（约 30 分钟后停止）
+
+  // 分片上传管理
+  private pendingUploads = new Map<string, PendingUpload>()
+  private readonly UPLOAD_TIMEOUT = 60000  // 60 秒超时
+  private readonly MAX_CONCURRENT_UPLOADS = 5  // 最大并发上传数
 
   /**
    * 设置安全验证 token
@@ -266,27 +282,22 @@ class McpClient {
           }
         }
 
-        // 通过消息发送，确保历史记录被保存
-        const response = await chrome.runtime.sendMessage({
-          type: 'SYNC_ARTICLE',
-          payload: {
-            article: {
-              title: articleData.title,
-              content: htmlContent,
-              html: htmlContent,
-              markdown: markdown,
-              cover: articleData.cover,
-            },
-            platforms,
-            source: 'mcp',
-          },
-        })
-
-        if (response.error) {
-          throw new Error(response.error)
+        const article = {
+          title: articleData.title,
+          content: htmlContent,
+          html: htmlContent,
+          markdown: markdown,
+          cover: articleData.cover,
         }
 
-        return response.results
+        // 使用 sync-service 进行同步（支持 DSL 平台 + CMS 账户、历史记录、状态保存）
+        const { results, syncId } = await performSync(
+          article,
+          platforms,
+          { source: 'mcp' }
+        )
+
+        return { results, syncId }
       }
 
       case 'extractArticle': {
@@ -318,27 +329,151 @@ class McpClient {
         if (!imageData) throw new Error('Missing imageData parameter')
         if (!mimeType) throw new Error('Missing mimeType parameter')
 
-        // 获取适配器
-        const adapter = await getAdapter(platform)
-        if (!adapter) {
-          throw new Error(`Platform not found: ${platform}`)
+        return await this.performImageUpload(imageData, mimeType, platform)
+      }
+
+      // 分片上传：开始会话
+      case 'uploadImage:start': {
+        const uploadId = params?.uploadId as string
+        const totalChunks = params?.totalChunks as number
+        const mimeType = params?.mimeType as string
+        const platform = (params?.platform as string) || 'weibo'
+
+        if (!uploadId) throw new Error('Missing uploadId')
+        if (!totalChunks) throw new Error('Missing totalChunks')
+        if (!mimeType) throw new Error('Missing mimeType')
+
+        // 检查并发上传数
+        if (this.pendingUploads.size >= this.MAX_CONCURRENT_UPLOADS) {
+          throw new Error(`Too many concurrent uploads (max: ${this.MAX_CONCURRENT_UPLOADS})`)
         }
 
-        // 检查适配器是否支持 base64 图片上传
-        if (typeof (adapter as any).uploadImageBase64 !== 'function') {
-          throw new Error(`Platform ${platform} does not support base64 image upload`)
-        }
+        // 设置超时清理
+        const timeoutId = setTimeout(() => {
+          this.cleanupUpload(uploadId, 'timeout')
+        }, this.UPLOAD_TIMEOUT)
 
-        // 上传图片
-        const result = await (adapter as any).uploadImageBase64(imageData, mimeType)
-        return {
-          url: result.url,
+        // 创建上传会话
+        this.pendingUploads.set(uploadId, {
+          chunks: new Map(),
+          totalChunks,
+          mimeType,
           platform,
+          createdAt: Date.now(),
+          timeoutId,
+        })
+
+        logger.debug(`Chunked upload started: ${uploadId}, ${totalChunks} chunks`)
+        return { success: true }
+      }
+
+      // 分片上传：接收分片
+      case 'uploadImage:chunk': {
+        const uploadId = params?.uploadId as string
+        const chunkIndex = params?.chunkIndex as number
+        const data = params?.data as string
+
+        if (!uploadId) throw new Error('Missing uploadId')
+        if (chunkIndex === undefined) throw new Error('Missing chunkIndex')
+        if (!data) throw new Error('Missing chunk data')
+
+        const upload = this.pendingUploads.get(uploadId)
+        if (!upload) {
+          throw new Error(`Upload session not found: ${uploadId}`)
         }
+
+        // 存储分片
+        upload.chunks.set(chunkIndex, data)
+        logger.debug(`Chunk received: ${uploadId} [${chunkIndex + 1}/${upload.totalChunks}]`)
+
+        return { success: true, received: upload.chunks.size, total: upload.totalChunks }
+      }
+
+      // 分片上传：完成并上传
+      case 'uploadImage:complete': {
+        const uploadId = params?.uploadId as string
+
+        if (!uploadId) throw new Error('Missing uploadId')
+
+        const upload = this.pendingUploads.get(uploadId)
+        if (!upload) {
+          throw new Error(`Upload session not found: ${uploadId}`)
+        }
+
+        // 检查是否所有分片都已接收
+        if (upload.chunks.size !== upload.totalChunks) {
+          throw new Error(`Incomplete upload: received ${upload.chunks.size}/${upload.totalChunks} chunks`)
+        }
+
+        // 合并分片
+        const sortedChunks: string[] = []
+        for (let i = 0; i < upload.totalChunks; i++) {
+          const chunk = upload.chunks.get(i)
+          if (!chunk) {
+            throw new Error(`Missing chunk ${i}`)
+          }
+          sortedChunks.push(chunk)
+        }
+        const imageData = sortedChunks.join('')
+
+        logger.debug(`Chunks merged: ${uploadId}, total size: ${imageData.length}`)
+
+        // 清理会话
+        this.cleanupUpload(uploadId, 'completed')
+
+        // 执行实际上传
+        return await this.performImageUpload(imageData, upload.mimeType, upload.platform)
       }
 
       default:
         throw new Error(`Unknown method: ${method}`)
+    }
+  }
+
+  /**
+   * 执行图片上传
+   * 将 base64 转为 Blob，使用统一的 uploadImage 方法
+   */
+  private async performImageUpload(
+    imageData: string,
+    mimeType: string,
+    platform: string
+  ): Promise<{ url: string; platform: string }> {
+    // 获取适配器
+    const adapter = await getAdapter(platform)
+    if (!adapter) {
+      throw new Error(`Platform not found: ${platform}`)
+    }
+
+    // 检查适配器是否支持图片上传
+    if (typeof adapter.uploadImage !== 'function') {
+      throw new Error(`Platform ${platform} does not support image upload`)
+    }
+
+    // base64 转 Blob
+    const binaryStr = atob(imageData)
+    const bytes = new Uint8Array(binaryStr.length)
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i)
+    }
+    const blob = new Blob([bytes], { type: mimeType })
+
+    // 调用统一的 uploadImage 接口
+    const url = await adapter.uploadImage(blob)
+    return { url, platform }
+  }
+
+  /**
+   * 清理上传会话
+   */
+  private cleanupUpload(uploadId: string, reason: 'completed' | 'timeout' | 'error'): void {
+    const upload = this.pendingUploads.get(uploadId)
+    if (upload) {
+      clearTimeout(upload.timeoutId)
+      // 清理 chunks 以释放内存
+      upload.chunks.clear()
+      this.pendingUploads.delete(uploadId)
+      logger.debug(`Upload cleanup: ${uploadId} (${reason})`)
     }
   }
 }

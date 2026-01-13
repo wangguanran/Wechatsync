@@ -156,6 +156,13 @@ export class WoshipmAdapter extends CodeAdapter {
   }
 
   /**
+   * 通过 Blob 上传图片（覆盖基类方法）
+   */
+  async uploadImage(file: Blob, filename?: string): Promise<string> {
+    return this.uploadImageBinaryInternal(file, filename || 'image.png')
+  }
+
+  /**
    * 通过 URL 上传图片
    */
   protected async uploadImageByUrl(src: string): Promise<ImageUploadResult> {
@@ -169,7 +176,8 @@ export class WoshipmAdapter extends CodeAdapter {
       const blob = await imageResponse.blob()
 
       // 2. 上传到 woshipm
-      return await this.uploadImageBinary(blob, this.getFilenameFromUrl(src))
+      const url = await this.uploadImageBinaryInternal(blob, this.getFilenameFromUrl(src))
+      return { url }
     } catch (error) {
       logger.warn('Failed to upload image by URL:', src, error)
       return { url: src } // 失败时返回原 URL
@@ -177,9 +185,9 @@ export class WoshipmAdapter extends CodeAdapter {
   }
 
   /**
-   * 上传图片 (二进制方式)
+   * 上传图片 (二进制方式) - 内部使用
    */
-  private async uploadImageBinary(file: Blob, filename: string): Promise<ImageUploadResult> {
+  private async uploadImageBinaryInternal(file: Blob, filename: string): Promise<string> {
     const formData = new FormData()
     formData.append('action', 'wpuf_insert_image')
     formData.append('name', filename)
@@ -198,7 +206,7 @@ export class WoshipmAdapter extends CodeAdapter {
 
     if (data.data && data.data.length > 0 && data.data[0].url) {
       logger.debug('Uploaded image:', filename, '->', data.data[0].url)
-      return { url: data.data[0].url }
+      return data.data[0].url
     }
 
     throw new Error(data.error || 'Failed to upload image')

@@ -195,6 +195,13 @@ export class JianshuAdapter extends CodeAdapter {
   }
 
   /**
+   * 通过 Blob 上传图片（覆盖基类方法）
+   */
+  async uploadImage(file: Blob, _filename?: string): Promise<string> {
+    return this.uploadImageBinaryInternal(file)
+  }
+
+  /**
    * 通过 URL 上传图片
    */
   protected async uploadImageByUrl(src: string): Promise<ImageUploadResult> {
@@ -207,8 +214,8 @@ export class JianshuAdapter extends CodeAdapter {
       const imageBlob = await imageResponse.blob()
 
       // 2. 上传图片
-      const result = await this.uploadImageBinary(imageBlob)
-      return result
+      const url = await this.uploadImageBinaryInternal(imageBlob)
+      return { url }
     } catch (error) {
       logger.warn('Failed to upload image:', src, error)
       return { url: src } // 失败时返回原 URL
@@ -216,9 +223,9 @@ export class JianshuAdapter extends CodeAdapter {
   }
 
   /**
-   * 上传图片 (二进制方式)
+   * 上传图片 (二进制方式) - 内部使用
    */
-  private async uploadImageBinary(file: Blob): Promise<{ url: string }> {
+  private async uploadImageBinaryInternal(file: Blob): Promise<string> {
     // 1. 获取上传凭证
     const { token, url: uploadUrl } = await this.getUploadToken()
 
@@ -239,12 +246,12 @@ export class JianshuAdapter extends CodeAdapter {
     const data = await response.json() as { url?: string; key?: string }
 
     if (data.url) {
-      return { url: data.url }
+      return data.url
     }
 
     // 七牛返回的是 key，需要拼接完整 URL
     if (data.key) {
-      return { url: `https://upload-images.jianshu.io/upload_images/${data.key}` }
+      return `https://upload-images.jianshu.io/upload_images/${data.key}`
     }
 
     throw new Error('图片上传失败')

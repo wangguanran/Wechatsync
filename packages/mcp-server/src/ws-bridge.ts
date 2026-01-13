@@ -345,4 +345,58 @@ export class ExtensionBridge {
   private generateId(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
   }
+
+  // 分片上传配置
+  private readonly CHUNK_SIZE = 512 * 1024  // 512KB per chunk
+  private readonly CHUNK_THRESHOLD = 1024 * 1024  // 1MB threshold for chunking
+
+  /**
+   * 分片上传图片
+   * 大于 1MB 的图片会自动分片上传
+   */
+  async uploadImageChunked(
+    imageData: string,
+    mimeType: string,
+    platform: string = 'weibo'
+  ): Promise<{ url: string; platform: string }> {
+    // 小于阈值，直接上传
+    if (imageData.length < this.CHUNK_THRESHOLD) {
+      return this.request('uploadImage', { imageData, mimeType, platform })
+    }
+
+    // 大图片，分片上传
+    const uploadId = this.generateId()
+    const chunks: string[] = []
+
+    // 分割 base64 数据
+    for (let i = 0; i < imageData.length; i += this.CHUNK_SIZE) {
+      chunks.push(imageData.slice(i, i + this.CHUNK_SIZE))
+    }
+
+    console.error(`[Bridge] Chunked upload: ${chunks.length} chunks, total size: ${imageData.length}`)
+
+    // 1. 发送开始消息
+    await this.request('uploadImage:start', {
+      uploadId,
+      totalChunks: chunks.length,
+      mimeType,
+      platform,
+    })
+
+    // 2. 逐个发送分片
+    for (let i = 0; i < chunks.length; i++) {
+      await this.request('uploadImage:chunk', {
+        uploadId,
+        chunkIndex: i,
+        data: chunks[i],
+      })
+    }
+
+    // 3. 发送完成消息并获取结果
+    const result = await this.request<{ url: string; platform: string }>('uploadImage:complete', {
+      uploadId,
+    })
+
+    return result
+  }
 }
