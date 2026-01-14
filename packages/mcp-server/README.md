@@ -1,6 +1,6 @@
 # WechatSync MCP Server
 
-MCP Server for WechatSync - 连接 Claude Code 和 Chrome Extension。
+MCP Server for WechatSync - 连接 Claude Code 和 Chrome Extension，实现 AI 辅助文章同步。
 
 ## 架构
 
@@ -11,23 +11,30 @@ MCP Server for WechatSync - 连接 Claude Code 和 Chrome Extension。
 └─────────────┘                  └─────────────────┘                   └─────────────┘
 ```
 
-## 安装
+## 快速开始
+
+### 1. 安装并构建
 
 ```bash
 # 在项目根目录
 yarn install
-yarn build:mcp
+yarn build
 ```
 
-## 配置 Claude Code
+### 2. 配置 Chrome 扩展
 
-在 `~/.claude.json` 中添加：
+1. 点击扩展图标，进入设置
+2. 启用「MCP 连接」开关
+3. 设置一个安全 Token（记住这个值）
+
+### 3. 配置 Claude Code
+
+在 `~/.claude/claude_desktop_config.json` 中添加：
 
 ```json
 {
   "mcpServers": {
-    "wechatsync": {
-      "type": "stdio",
+    "sync-assistant": {
       "command": "node",
       "args": ["/path/to/Wechatsync/packages/mcp-server/dist/index.js"],
       "env": {
@@ -38,9 +45,17 @@ yarn build:mcp
 }
 ```
 
-**重要**: `MCP_TOKEN` 必须与 Chrome 扩展中设置的 token 一致，否则请求会被拒绝。
+**重要**: `MCP_TOKEN` 必须与 Chrome 扩展中设置的 Token 一致。
 
-或者在项目的 `.mcp.json` 中配置。
+### 4. 使用
+
+在 Claude Code 中直接对话即可：
+
+```
+"帮我把这篇文章同步到知乎和掘金"
+"检查下哪些平台已登录"
+"上传这张图片到微博图床"
+```
 
 ## 可用 Tools
 
@@ -79,9 +94,35 @@ yarn build:mcp
 
 从当前浏览器页面提取文章内容。
 
+### upload_image_file
+
+从本地文件上传图片到图床平台，返回公开访问的 URL。
+
+```
+参数:
+- filePath: string (必需) - 本地图片文件的绝对路径
+- platform: string (可选) - 图床平台，默认 weibo
+  可选值: weibo, zhihu, juejin, jianshu, woshipm
+```
+
+## 支持的平台
+
+| 平台 | ID | 图片上传 |
+|-----|-----|---------|
+| 知乎 | zhihu | ✅ |
+| 掘金 | juejin | ✅ |
+| 头条号 | toutiao | ✅ |
+| CSDN | csdn | ✅ |
+| 简书 | jianshu | ✅ |
+| 微博 | weibo | ✅ |
+| B站专栏 | bilibili | ✅ |
+| 百家号 | baijiahao | ✅ |
+| 人人都是产品经理 | woshipm | ✅ |
+| 大鱼号 | dayu | ✅ |
+
 ## 环境变量
 
-- `MCP_TOKEN`: 安全验证 token（必需，需与 Chrome 扩展中设置的 token 一致）
+- `MCP_TOKEN`: 安全验证 Token（必需）
 - `SYNC_WS_PORT`: WebSocket 端口（默认 9527）
 - `SYNC_HTTP_PORT`: HTTP 端口（默认 9528，仅 SSE 模式）
 
@@ -97,3 +138,18 @@ yarn build:mcp
 # 运行
 yarn mcp
 ```
+
+## 故障排除
+
+### Extension 未连接
+
+确保：
+1. Chrome 扩展已安装并启用
+2. 扩展设置中「MCP 连接」已开启
+3. Token 设置正确且与 MCP Server 一致
+
+### 图片上传失败
+
+1. 检查目标平台是否已登录
+2. 尝试换一个图床平台（如从 weibo 换到 juejin）
+3. 检查图片格式是否支持（png, jpg, gif, webp）

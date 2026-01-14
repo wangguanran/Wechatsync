@@ -26,22 +26,12 @@ Wechatsync/
 ### 安装扩展
 
 ```bash
-cd packages/extension
-pnpm install
-pnpm run build
+# 在项目根目录
+yarn install
+yarn build
 ```
 
-然后在 Chrome 中加载 `dist` 目录。
-
-### 构建 MCP Server (可选)
-
-```bash
-cd packages/mcp-server
-pnpm install
-pnpm run build
-```
-
-MCP Server 通过 stdio 模式与 Claude Code 通信，通过 WebSocket (`ws://localhost:9527`) 与 Chrome 扩展通信。
+然后在 Chrome 中加载 `packages/extension/dist` 目录。
 
 ## 支持的平台
 
@@ -60,22 +50,24 @@ MCP Server 通过 stdio 模式与 Claude Code 通信，通过 WebSocket (`ws://l
 | 搜狐号 | sohu | ✅ |
 | 雪球 | xueqiu | ✅ |
 | 人人都是产品经理 | woshipm | ✅ |
+| 大鱼号 | dayu | ✅ |
 | WordPress | wordpress | ✅ |
 | Typecho | typecho | ✅ |
 
 ## Claude Code 集成
 
+通过 MCP 协议，可以在 Claude Code 中直接使用文章同步助手。
+
 ### 配置步骤
 
-1. 构建 MCP Server: `yarn build:mcp`
-2. 在 Chrome 扩展设置中启用 MCP 连接，并设置 Token
-3. 在 `~/.claude.json` 中添加配置：
+1. 构建项目: `yarn build`
+2. 在 Chrome 扩展设置中启用「MCP 连接」，并设置 Token
+3. 在 `~/.claude/claude_desktop_config.json` 中添加配置：
 
 ```json
 {
   "mcpServers": {
-    "wechatsync": {
-      "type": "stdio",
+    "sync-assistant": {
       "command": "node",
       "args": ["/path/to/Wechatsync/packages/mcp-server/dist/index.js"],
       "env": {
@@ -86,24 +78,38 @@ MCP Server 通过 stdio 模式与 Claude Code 通信，通过 WebSocket (`ws://l
 }
 ```
 
-**重要**: `MCP_TOKEN` 必须与 Chrome 扩展中设置的 token 一致。
+**重要**: `MCP_TOKEN` 必须与 Chrome 扩展中设置的 Token 一致。
+
+### 使用示例
+
+在 Claude Code 中直接对话：
+
+```
+"帮我把这篇文章同步到知乎和掘金"
+"检查下哪些平台已登录"
+"上传 /path/to/image.png 到微博图床"
+```
 
 ### 可用工具
 
-- `list_platforms` - 列出所有平台及登录状态
-- `check_auth` - 检查指定平台登录状态
-- `sync_article` - 同步文章到指定平台
-- `extract_article` - 从当前页面提取文章
+| 工具 | 说明 |
+|-----|------|
+| `list_platforms` | 列出所有平台及登录状态 |
+| `check_auth` | 检查指定平台登录状态 |
+| `sync_article` | 同步文章到指定平台（草稿） |
+| `extract_article` | 从当前浏览器页面提取文章 |
+| `upload_image_file` | 上传本地图片到平台 |
+
+详细文档见 [packages/mcp-server/README.md](packages/mcp-server/README.md)
 
 ## 开发
 
 ```bash
 # 开发模式
-cd packages/extension
-pnpm run dev
+yarn dev
 
 # 构建
-pnpm run build
+yarn build
 ```
 
 ## License
