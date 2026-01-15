@@ -1,10 +1,11 @@
 /**
  * CSDN 适配器
  */
-import { CodeAdapter, type ImageUploadResult, htmlToMarkdown, markdownToHtml } from '@wechatsync/core'
-import type { Article, AuthResult, SyncResult, PlatformMeta } from '@wechatsync/core'
-import type { PublishOptions } from '@wechatsync/core'
-import { createLogger } from '../lib/logger'
+import { CodeAdapter, type ImageUploadResult } from '../code-adapter'
+import type { Article, AuthResult, SyncResult, PlatformMeta } from '../../types'
+import type { PublishOptions } from '../types'
+import { htmlToMarkdown, markdownToHtml } from '../../lib'
+import { createLogger } from '../../lib/logger'
 
 const logger = createLogger('CSDN')
 

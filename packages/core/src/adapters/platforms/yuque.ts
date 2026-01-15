@@ -1,10 +1,11 @@
 /**
  * 语雀适配器
  */
-import { CodeAdapter, type ImageUploadResult, htmlToMarkdown, markdownToHtml } from '@wechatsync/core'
-import type { Article, AuthResult, SyncResult, PlatformMeta } from '@wechatsync/core'
-import type { PublishOptions } from '@wechatsync/core'
-import { createLogger } from '../lib/logger'
+import { CodeAdapter, type ImageUploadResult } from '../code-adapter'
+import type { Article, AuthResult, SyncResult, PlatformMeta } from '../../types'
+import type { PublishOptions } from '../types'
+import { htmlToMarkdown, markdownToHtml } from '../../lib'
+import { createLogger } from '../../lib/logger'
 
 const logger = createLogger('Yuque')
 
@@ -32,24 +33,53 @@ export class YuqueAdapter extends CodeAdapter {
   private bookId: number | null = null
   private csrfToken: string = ''
   private currentPostId: number | null = null
+  private headerRuleIds: string[] = []
 
   /**
-   * 获取 CSRF Token
+   * 设置动态请求头规则 (CORS)
    */
-  private async getCsrfToken(): Promise<string> {
-    const cookie = await chrome.cookies.get({
-      url: 'https://www.yuque.com',
-      name: 'yuque_ctoken',
+  private async setupHeaderRules(): Promise<void> {
+    if (this.headerRuleIds.length > 0) return
+    if (!this.runtime.headerRules) return
+
+    const ruleId = await this.runtime.headerRules.add({
+      urlFilter: '*://www.yuque.com/api/*',
+      headers: {
+        'Origin': 'https://www.yuque.com',
+        'Referer': 'https://www.yuque.com/dashboard',
+      },
+      resourceTypes: ['xmlhttprequest'],
     })
-    if (!cookie?.value) {
-      throw new Error('请先登录语雀')
+    this.headerRuleIds.push(ruleId)
+
+    logger.debug('Header rules added:', this.headerRuleIds)
+  }
+
+  /**
+   * 清除动态请求头规则
+   */
+  private async clearHeaderRules(): Promise<void> {
+    if (!this.runtime.headerRules) return
+    for (const ruleId of this.headerRuleIds) {
+      await this.runtime.headerRules.remove(ruleId)
     }
-    return cookie.value
+    this.headerRuleIds = []
+    logger.debug('Header rules cleared')
+  }
+
+  private async getCsrfToken(): Promise<string> {
+    if (this.runtime.getCookie) {
+      const value = await this.runtime.getCookie('.yuque.com', 'yuque_ctoken')
+      if (!value) {
+        throw new Error('请先登录语雀')
+      }
+      return value
+    }
+    throw new Error('请先登录语雀')
   }
 
   async checkAuth(): Promise<AuthResult> {
     try {
-      // 获取 CSRF Token
       this.csrfToken = await this.getCsrfToken()
 
       const response = await this.runtime.fetch(
@@ -92,10 +122,12 @@ export class YuqueAdapter extends CodeAdapter {
   }
 
   async publish(article: Article, options?: PublishOptions): Promise<SyncResult> {
+    // 设置请求头规则
+    await this.setupHeaderRules()
+
     try {
       logger.info('Starting publish...')
 
-      // 1. 确保已登录
       if (!this.userInfo || !this.bookId) {
         const auth = await this.checkAuth()
         if (!auth.isAuthenticated) {
@@ -103,7 +135,6 @@ export class YuqueAdapter extends CodeAdapter {
         }
       }
 
-      // 2. 创建文档
       const createResponse = await this.runtime.fetch(
         'https://www.yuque.com/api/docs',
         {
@@ -137,10 +168,8 @@ export class YuqueAdapter extends CodeAdapter {
       const postId = createRes.data.id
       this.currentPostId = postId
 
-      // 3. 获取 HTML 内容
       const rawHtml = article.html || markdownToHtml(article.markdown)
 
-      // 4. 清理内容
       let content = this.cleanHtml(rawHtml, {
         removeIframes: true,
         removeSvgImages: true,
@@ -148,7 +177,6 @@ export class YuqueAdapter extends CodeAdapter {
         removeAttrs: ['data-reader-unique-id'],
       })
 
-      // 4. 处理图片
       content = await this.processImages(
         content,
         (src) => this.uploadImageByUrl(src),
@@ -158,10 +186,8 @@ export class YuqueAdapter extends CodeAdapter {
         }
       )
 
-      // 5. HTML 转 Markdown
       const markdown = htmlToMarkdown(content)
 
-      // 6. 转换为 Lake 格式
       const convertResponse = await this.runtime.fetch(
         'https://www.yuque.com/api/docs/convert',
         {
@@ -189,7 +215,6 @@ export class YuqueAdapter extends CodeAdapter {
 
       const lakeContent = convertRes.data.content
 
-      // 7. 保存文档内容
       const saveResponse = await this.runtime.fetch(
         `https://www.yuque.com/api/docs/${postId}/content`,
         {
@@ -217,34 +242,35 @@ export class YuqueAdapter extends CodeAdapter {
 
       const draftUrl = `https://www.yuque.com/go/doc/${postId}/edit`
 
-      return this.createResult(true, {
+      const result = this.createResult(true, {
         postId: String(postId),
         postUrl: draftUrl,
         draftOnly: options?.draftOnly ?? true,
       })
+
+      // 清除请求头规则
+      await this.clearHeaderRules()
+      return result
     } catch (error) {
+      // 清除请求头规则
+      await this.clearHeaderRules()
       return this.createResult(false, {
         error: (error as Error).message,
       })
     }
   }
 
-  /**
-   * 通过 URL 上传图片
-   */
   protected async uploadImageByUrl(src: string): Promise<ImageUploadResult> {
     if (!this.currentPostId) {
       throw new Error('文档 ID 未设置')
     }
 
-    // 1. 下载图片
     const imageResponse = await fetch(src)
     if (!imageResponse.ok) {
       throw new Error('图片下载失败: ' + src)
     }
     const imageBlob = await imageResponse.blob()
 
-    // 2. 上传到语雀
     const formData = new FormData()
     formData.append('file', imageBlob, 'image.jpg')
 

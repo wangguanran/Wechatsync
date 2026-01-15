@@ -22,28 +22,36 @@ import {
   trackAuthCheck,
 } from '../lib/analytics'
 
-// 导入所有代码适配器
-import { ZhihuAdapter } from './zhihu'
-import { JuejinAdapter } from './juejin'
-import { JianshuAdapter } from './jianshu'
-import { ToutiaoAdapter } from './toutiao'
-import { WeiboAdapter } from './weibo'
-import { BilibiliAdapter } from './bilibili'
-import { BaijiahaoAdapter } from './baijiahao'
-import { CSDNAdapter } from './csdn'
-import { YuqueAdapter } from './yuque'
-import { DoubanAdapter } from './douban'
-import { SohuAdapter } from './sohu'
-import { XueqiuAdapter } from './xueqiu'
-import { WeixinAdapter } from './weixin'
-import { WoshipmAdapter } from './woshipm'
-import { DaYuAdapter } from './dayu'
+// 导入代码适配器 - 从 core 包
+import {
+  DoubanAdapter,
+  XueqiuAdapter,
+  SohuAdapter,
+  DaYuAdapter,
+  WoshipmAdapter,
+  ZhihuAdapter,
+  JuejinAdapter,
+  CSDNAdapter,
+  ToutiaoAdapter,
+  WeiboAdapter,
+  BilibiliAdapter,
+  BaijiahaoAdapter,
+  YuqueAdapter,
+  WeixinAdapter,
+  JianshuAdapter,
+  YidianAdapter,
+  Cto51Adapter,
+  SohuFocusAdapter,
+  ImoocAdapter,
+  OschinaAdapter,
+  SegmentfaultAdapter,
+} from '@wechatsync/core'
 
 // 所有适配器类列表
 const ADAPTER_CLASSES = [
   ZhihuAdapter,
   JuejinAdapter,
-  // JianshuAdapter,
+  JianshuAdapter,
   ToutiaoAdapter,
   WeiboAdapter,
   BilibiliAdapter,
@@ -56,6 +64,12 @@ const ADAPTER_CLASSES = [
   WeixinAdapter,
   WoshipmAdapter,
   DaYuAdapter,
+  YidianAdapter,
+  Cto51Adapter,
+  SohuFocusAdapter,
+  ImoocAdapter,
+  OschinaAdapter,
+  SegmentfaultAdapter,
 ] as const
 
 // 适配器注册条目 (类型安全)

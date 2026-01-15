@@ -1,21 +1,14 @@
 /**
  * 微信公众号适配器
  */
-import { CodeAdapter, type ImageUploadResult, markdownToHtml } from '@wechatsync/core'
-import type { Article, AuthResult, SyncResult, PlatformMeta } from '@wechatsync/core'
-import type { PublishOptions } from '@wechatsync/core'
+import { CodeAdapter, type ImageUploadResult } from '../code-adapter'
+import type { Article, AuthResult, SyncResult, PlatformMeta } from '../../types'
+import type { PublishOptions } from '../types'
+import { markdownToHtml } from '../../lib'
+import { createLogger } from '../../lib/logger'
 import juice from 'juice'
-import { createLogger } from '../lib/logger'
 
 const logger = createLogger('Weixin')
-
-interface WeixinCommonData {
-  user_name: string
-  nick_name: string
-  t: string // token
-  ticket: string
-  time: number
-}
 
 interface WeixinMeta {
   token: string
@@ -62,6 +55,39 @@ export class WeixinAdapter extends CodeAdapter {
   }
 
   private weixinMeta: WeixinMeta | null = null
+  private headerRuleIds: string[] = []
+
+  /**
+   * 设置动态请求头规则 (CORS)
+   */
+  private async setupHeaderRules(): Promise<void> {
+    if (this.headerRuleIds.length > 0) return
+    if (!this.runtime.headerRules) return
+
+    const ruleId = await this.runtime.headerRules.add({
+      urlFilter: '*://mp.weixin.qq.com/cgi-bin/*',
+      headers: {
+        'Origin': 'https://mp.weixin.qq.com',
+        'Referer': 'https://mp.weixin.qq.com/',
+      },
+      resourceTypes: ['xmlhttprequest'],
+    })
+    this.headerRuleIds.push(ruleId)
+
+    logger.debug('Header rules added:', this.headerRuleIds)
+  }
+
+  /**
+   * 清除动态请求头规则
+   */
+  private async clearHeaderRules(): Promise<void> {
+    if (!this.runtime.headerRules) return
+    for (const ruleId of this.headerRuleIds) {
+      await this.runtime.headerRules.remove(ruleId)
+    }
+    this.headerRuleIds = []
+    logger.debug('Header rules cleared')
+  }
 
   async checkAuth(): Promise<AuthResult> {
     try {
@@ -75,22 +101,18 @@ export class WeixinAdapter extends CodeAdapter {
 
       const html = await response.text()
 
-      // MV3 不支持 new Function()，使用正则提取关键值
-      // 提取 token: t: "1573005921" || "1573005921"
       const tokenMatch = html.match(/data:\s*\{[\s\S]*?t:\s*["']([^"']+)["']/)
       if (!tokenMatch) {
         logger.debug(' No token found')
         return { isAuthenticated: false }
       }
 
-      // 提取其他字段
       const ticketMatch = html.match(/ticket:\s*["']([^"']+)["']/)
       const userNameMatch = html.match(/user_name:\s*["']([^"']+)["']/)
       const nickNameMatch = html.match(/nick_name:\s*["']([^"']+)["']/)
       const timeMatch = html.match(/time:\s*["'](\d+)["']/)
       const headImgMatch = html.match(/head_img:\s*['"]([^'"]+)['"]/)
 
-      // 提取头像 - 优先从页面元素获取
       const avatarMatch = html.match(/class="weui-desktop-account__thumb"[^>]*src="([^"]+)"/)
       let avatar = avatarMatch ? avatarMatch[1] : (headImgMatch ? headImgMatch[1] : '')
       if (avatar.startsWith('http://')) {
@@ -125,10 +147,12 @@ export class WeixinAdapter extends CodeAdapter {
   }
 
   async publish(article: Article, options?: PublishOptions): Promise<SyncResult> {
+    // 设置请求头规则
+    await this.setupHeaderRules()
+
     try {
       logger.info('Starting publish...')
 
-      // 1. 确保已登录
       if (!this.weixinMeta) {
         const auth = await this.checkAuth()
         if (!auth.isAuthenticated) {
@@ -136,11 +160,8 @@ export class WeixinAdapter extends CodeAdapter {
         }
       }
 
-      // 2. 获取 HTML 内容
-      // 优先使用原始 HTML（保留样式），否则从 Markdown 转换
       const rawHtml = article.html || markdownToHtml(article.markdown)
 
-      // 3. 清理内容
       let content = this.cleanHtml(rawHtml, {
         removeIframes: true,
         removeSvgImages: true,
@@ -148,10 +169,8 @@ export class WeixinAdapter extends CodeAdapter {
         removeAttrs: ['data-reader-unique-id', '_src'],
       })
 
-      // 4. 处理 LaTeX 公式（转成图片，放在图片处理之前）
       content = this.processLatex(content)
 
-      // 5. 处理图片（包括 LaTeX 生成的图片）
       content = await this.processImages(
         content,
         (src) => this.uploadImageByUrl(src),
@@ -161,10 +180,8 @@ export class WeixinAdapter extends CodeAdapter {
         }
       )
 
-      // 6. 处理内容格式（内联 CSS）
       content = this.processContent(content)
 
-      // 6. 创建草稿
       const formData = new URLSearchParams({
         token: this.weixinMeta!.token,
         lang: 'zh_CN',
@@ -259,34 +276,35 @@ export class WeixinAdapter extends CodeAdapter {
 
       const draftUrl = `https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit&action=edit&type=77&appmsgid=${res.appMsgId}&token=${this.weixinMeta!.token}&lang=zh_CN`
 
-      return this.createResult(true, {
+      const result = this.createResult(true, {
         postId: res.appMsgId,
         postUrl: draftUrl,
         draftOnly: options?.draftOnly ?? true,
       })
+
+      // 清除请求头规则
+      await this.clearHeaderRules()
+      return result
     } catch (error) {
+      // 清除请求头规则
+      await this.clearHeaderRules()
       return this.createResult(false, {
         error: (error as Error).message,
       })
     }
   }
 
-  /**
-   * 通过 URL 上传图片（先下载再上传）
-   */
   protected async uploadImageByUrl(src: string): Promise<ImageUploadResult> {
     if (!this.weixinMeta) {
       throw new Error('未登录')
     }
 
-    // 1. 下载图片
     const imageResponse = await fetch(src)
     if (!imageResponse.ok) {
       throw new Error('图片下载失败: ' + src)
     }
     const imageBlob = await imageResponse.blob()
 
-    // 2. 构建 FormData
     const formData = new FormData()
     const timestamp = Date.now()
     const fileName = `${timestamp}.jpg`
@@ -298,7 +316,6 @@ export class WeixinAdapter extends CodeAdapter {
     formData.append('size', String(imageBlob.size))
     formData.append('file', imageBlob, fileName)
 
-    // 3. 上传到微信
     const { token, userName, ticket, svrTime } = this.weixinMeta
     const seq = Date.now()
 
@@ -328,38 +345,24 @@ export class WeixinAdapter extends CodeAdapter {
     }
   }
 
-  /**
-   * 检查内容是否是 LaTeX 公式（而非货币符号等）
-   * LaTeX 公式通常包含: \ ^ _ { } 或希腊字母等
-   */
   private isLatexFormula(text: string): boolean {
-    // 包含 LaTeX 命令字符
     if (/[\\^_{}]/.test(text)) return true
-    // 包含希腊字母 (Unicode)
     if (/[α-ωΑ-Ω]/.test(text)) return true
-    // 包含常见数学符号
     if (/[∑∏∫∂∇∞≠≤≥±×÷√]/.test(text)) return true
     return false
   }
 
-  /**
-   * 处理 LaTeX 公式，转换为图片
-   * 微信公众号不支持 JS 渲染，需要用图片展示公式
-   * 使用 PNG 格式（SVG 会被 cleanHtml 清理）
-   */
   private processLatex(content: string): string {
     const LATEX_API = 'https://latex.codecogs.com/png.latex'
 
-    // 块级公式 $$...$$ 转成居中图片
     content = content.replace(/\$\$([^$]+)\$\$/g, (match, latex) => {
-      if (!this.isLatexFormula(latex)) return match // 不是 LaTeX，保持原样
+      if (!this.isLatexFormula(latex)) return match
       const encoded = encodeURIComponent(latex.trim())
       return `<p style="text-align: center;"><img src="${LATEX_API}?\\dpi{150}${encoded}" alt="formula" style="vertical-align: middle; max-width: 100%;"></p>`
     })
 
-    // 行内公式 $...$ 转成内联图片
     content = content.replace(/\$([^$]+)\$/g, (match, latex) => {
-      if (!this.isLatexFormula(latex)) return match // 不是 LaTeX，保持原样
+      if (!this.isLatexFormula(latex)) return match
       const encoded = encodeURIComponent(latex.trim())
       return `<img src="${LATEX_API}?\\dpi{120}${encoded}" alt="formula" style="vertical-align: middle;">`
     })
@@ -367,21 +370,12 @@ export class WeixinAdapter extends CodeAdapter {
     return content
   }
 
-  /**
-   * 处理内容格式
-   */
   private processContent(content: string): string {
-    // 包装内容
     const wrapped = `<section style="margin-left: 6px; margin-right: 6px; line-height: 1.75em;">${content}</section>`
-
-    // 使用 juice 内联 CSS
     return juice.inlineContent(wrapped, WEIXIN_CSS)
   }
 
-  /**
-   * 格式化错误信息
-   */
-  private formatError(res: any): string {
+  private formatError(res: { ret?: number; base_resp?: { ret: number } }): string {
     const ret = res.ret ?? res.base_resp?.ret
 
     const errorMap: Record<number, string> = {
@@ -411,6 +405,6 @@ export class WeixinAdapter extends CodeAdapter {
       [220002]: '图片库已达到存储上限',
     }
 
-    return errorMap[ret] || `同步失败 (错误码: ${ret})`
+    return errorMap[ret as number] || `同步失败 (错误码: ${ret})`
   }
 }

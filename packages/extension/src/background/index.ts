@@ -26,7 +26,7 @@ import {
   trackMilestone,
   trackGrowthMetrics,
 } from '../lib/analytics'
-import { checkSyncFrequency } from '../lib/rate-limit'
+import { checkSyncFrequency, recordSync } from '../lib/rate-limit'
 
 const logger = createLogger('Background')
 
@@ -394,6 +394,14 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
         await updateHistoryItem(syncId, finalStatus, allResults, allPlatformMetas)
       }
 
+      // 记录同步频率（统一在 background 记录，确保所有来源都被记录）
+      const successfulPlatforms = allResults
+        .filter(r => r.success)
+        .map(r => r.platform)
+      if (successfulPlatforms.length > 0) {
+        recordSync(successfulPlatforms).catch(() => {})
+      }
+
       return { results: allResults, rateLimitWarning, syncId }
     }
 
@@ -522,6 +530,11 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
           }
           syncState.results.push(cmsResult)
           await saveSyncState(syncState)
+        }
+
+        // 记录同步频率
+        if (result.success) {
+          recordSync([accountId]).catch(() => {})
         }
 
         return {
@@ -817,6 +830,14 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
       // 更新历史记录
       await updateHistoryItem(syncId, finalStatus, allResults, allPlatformMetas)
 
+      // 记录同步频率（统一在 background 记录）
+      const successfulPlatforms = allResults
+        .filter((r: any) => r.success)
+        .map((r: any) => r.platform)
+      if (successfulPlatforms.length > 0) {
+        recordSync(successfulPlatforms).catch(() => {})
+      }
+
       return { results: allResults, rateLimitWarning, syncId }
     }
 
@@ -995,6 +1016,27 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 // 首次启动时也追踪一次增长指标
 trackGrowthMetrics().catch(() => {})
+
+/**
+ * 清理遗留的动态规则（防止扩展崩溃后规则残留影响其他网站）
+ */
+async function clearOrphanedRules() {
+  try {
+    const rules = await chrome.declarativeNetRequest.getDynamicRules()
+    if (rules.length > 0) {
+      logger.info(`Clearing ${rules.length} orphaned dynamic rules...`)
+      await chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: rules.map(r => r.id),
+      })
+      logger.info('Orphaned rules cleared')
+    }
+  } catch (error) {
+    logger.error('Failed to clear orphaned rules:', error)
+  }
+}
+
+// 启动时清理遗留规则
+clearOrphanedRules()
 
 logger.info('Service Worker started')
 

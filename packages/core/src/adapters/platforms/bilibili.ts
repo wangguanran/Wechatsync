@@ -1,10 +1,11 @@
 /**
  * B站适配器
  */
-import { CodeAdapter, type ImageUploadResult, markdownToHtml } from '@wechatsync/core'
-import type { Article, AuthResult, SyncResult, PlatformMeta } from '@wechatsync/core'
-import type { PublishOptions } from '@wechatsync/core'
-import { createLogger } from '../lib/logger'
+import { CodeAdapter, type ImageUploadResult } from '../code-adapter'
+import type { Article, AuthResult, SyncResult, PlatformMeta } from '../../types'
+import type { PublishOptions } from '../types'
+import { markdownToHtml } from '../../lib'
+import { createLogger } from '../../lib/logger'
 
 const logger = createLogger('Bilibili')
 
@@ -26,6 +27,40 @@ export class BilibiliAdapter extends CodeAdapter {
 
   private userInfo: BilibiliUserInfo | null = null
   private csrf: string = ''
+  private headerRuleIds: string[] = []
+
+  /**
+   * 设置动态请求头规则 (CORS)
+   */
+  private async setupHeaderRules(): Promise<void> {
+    if (this.headerRuleIds.length > 0) return
+    if (!this.runtime.headerRules) return
+
+    // api.bilibili.com
+    const ruleId = await this.runtime.headerRules.add({
+      urlFilter: '*://api.bilibili.com/*',
+      headers: {
+        'Origin': 'https://member.bilibili.com',
+        'Referer': 'https://member.bilibili.com/',
+      },
+      resourceTypes: ['xmlhttprequest'],
+    })
+    this.headerRuleIds.push(ruleId)
+
+    logger.debug('Header rules added:', this.headerRuleIds)
+  }
+
+  /**
+   * 清除动态请求头规则
+   */
+  private async clearHeaderRules(): Promise<void> {
+    if (!this.runtime.headerRules) return
+    for (const ruleId of this.headerRuleIds) {
+      await this.runtime.headerRules.remove(ruleId)
+    }
+    this.headerRuleIds = []
+    logger.debug('Header rules cleared')
+  }
 
   async checkAuth(): Promise<AuthResult> {
     try {
@@ -38,8 +73,6 @@ export class BilibiliAdapter extends CodeAdapter {
 
       if (res.code === 0 && res.data?.isLogin) {
         this.userInfo = res.data
-
-        // 获取 CSRF token (bili_jct cookie)
         await this.fetchCsrf()
 
         return {
@@ -57,16 +90,12 @@ export class BilibiliAdapter extends CodeAdapter {
     }
   }
 
-  /**
-   * 获取 CSRF token (从 bili_jct cookie)
-   */
   private async fetchCsrf(): Promise<void> {
     try {
-      const cookie = await chrome.cookies.get({
-        url: 'https://www.bilibili.com',
-        name: 'bili_jct',
-      })
-      this.csrf = cookie?.value || ''
+      if (this.runtime.getCookie) {
+        const value = await this.runtime.getCookie('.bilibili.com', 'bili_jct')
+        this.csrf = value || ''
+      }
       logger.debug('CSRF token:', this.csrf ? 'obtained' : 'not found')
     } catch (e) {
       logger.error('Failed to get CSRF:', e)
@@ -74,10 +103,12 @@ export class BilibiliAdapter extends CodeAdapter {
   }
 
   async publish(article: Article, options?: PublishOptions): Promise<SyncResult> {
+    // 设置请求头规则
+    await this.setupHeaderRules()
+
     try {
       logger.info('Starting publish...')
 
-      // 1. 确保已登录
       if (!this.userInfo) {
         const auth = await this.checkAuth()
         if (!auth.isAuthenticated) {
@@ -89,10 +120,8 @@ export class BilibiliAdapter extends CodeAdapter {
         throw new Error('获取 CSRF token 失败，请刷新页面后重试')
       }
 
-      // 2. 获取 HTML 内容
       const rawHtml = article.html || markdownToHtml(article.markdown)
 
-      // 3. 清理内容
       let content = this.cleanHtml(rawHtml, {
         removeLinks: true,
         removeIframes: true,
@@ -101,7 +130,6 @@ export class BilibiliAdapter extends CodeAdapter {
         removeAttrs: ['data-reader-unique-id'],
       })
 
-      // 3. 处理图片
       content = await this.processImages(
         content,
         (src) => this.uploadImageByUrl(src),
@@ -111,7 +139,6 @@ export class BilibiliAdapter extends CodeAdapter {
         }
       )
 
-      // 4. 保存草稿
       const res = await this.postForm<{
         code: number
         message?: string
@@ -119,7 +146,7 @@ export class BilibiliAdapter extends CodeAdapter {
       }>(
         'https://api.bilibili.com/x/article/creative/draft/addupdate',
         {
-          tid: '4', // 分类 ID
+          tid: '4',
           title: article.title,
           content: content,
           csrf: this.csrf,
@@ -136,34 +163,35 @@ export class BilibiliAdapter extends CodeAdapter {
 
       const draftUrl = `https://member.bilibili.com/platform/upload/text/edit?aid=${res.data.aid}`
 
-      return this.createResult(true, {
+      const result = this.createResult(true, {
         postId: String(res.data.aid),
         postUrl: draftUrl,
         draftOnly: options?.draftOnly ?? true,
       })
+
+      // 清除请求头规则
+      await this.clearHeaderRules()
+      return result
     } catch (error) {
+      // 清除请求头规则
+      await this.clearHeaderRules()
       return this.createResult(false, {
         error: (error as Error).message,
       })
     }
   }
 
-  /**
-   * 通过 URL 上传图片
-   */
   protected async uploadImageByUrl(src: string): Promise<ImageUploadResult> {
     if (!this.csrf) {
       throw new Error('CSRF token 未获取')
     }
 
-    // 1. 下载图片
     const imageResponse = await fetch(src)
     if (!imageResponse.ok) {
       throw new Error('图片下载失败: ' + src)
     }
     const imageBlob = await imageResponse.blob()
 
-    // 2. 上传到B站
     const formData = new FormData()
     formData.append('binary', imageBlob, 'image.jpg')
     formData.append('csrf', this.csrf)

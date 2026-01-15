@@ -24,6 +24,14 @@ export interface RuntimeInterface {
   }
 
   /**
+   * 获取单个 Cookie 值（便捷方法）
+   * @param domain Cookie 域名
+   * @param name Cookie 名称
+   * @returns Cookie 值，不存在返回 null
+   */
+  getCookie?(domain: string, name: string): Promise<string | null>
+
+  /**
    * 持久化存储
    */
   storage: {
@@ -48,6 +56,36 @@ export interface RuntimeInterface {
     add(rule: HeaderRule): Promise<string>
     remove(ruleId: string): Promise<void>
     clear(): Promise<void>
+  }
+
+  /**
+   * Tab 管理（仅扩展环境支持）
+   */
+  tabs?: {
+    /**
+     * 查找匹配 URL 的 tab
+     */
+    query(urlPattern: string): Promise<Array<{ id: number; url?: string }>>
+    /**
+     * 创建新 tab
+     */
+    create(url: string, active?: boolean): Promise<{ id: number }>
+    /**
+     * 等待 tab 加载完成
+     */
+    waitForLoad(tabId: number, timeout?: number): Promise<void>
+    /**
+     * 在 tab 的页面上下文中执行函数
+     * @param tabId Tab ID
+     * @param func 要执行的函数
+     * @param args 函数参数
+     * @returns 函数执行结果
+     */
+    executeScript<T, A extends unknown[]>(
+      tabId: number,
+      func: (...args: A) => T | Promise<T>,
+      args: A
+    ): Promise<T>
   }
 
   /**

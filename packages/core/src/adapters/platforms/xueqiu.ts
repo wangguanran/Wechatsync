@@ -1,11 +1,12 @@
 /**
  * 雪球适配器
  */
-import { CodeAdapter, type ImageUploadResult, htmlToMarkdown, markdownToHtml } from '@wechatsync/core'
+import { CodeAdapter, type ImageUploadResult } from '../code-adapter'
 import { Remarkable } from 'remarkable'
-import type { Article, AuthResult, SyncResult, PlatformMeta } from '@wechatsync/core'
-import type { PublishOptions } from '@wechatsync/core'
-import { createLogger } from '../lib/logger'
+import type { Article, AuthResult, SyncResult, PlatformMeta } from '../../types'
+import type { PublishOptions } from '../types'
+import { htmlToMarkdown, markdownToHtml } from '../../lib'
+import { createLogger } from '../../lib/logger'
 
 const logger = createLogger('Xueqiu')
 
@@ -26,6 +27,39 @@ export class XueqiuAdapter extends CodeAdapter {
   }
 
   private currentUser: XueqiuUser | null = null
+  private headerRuleIds: string[] = []
+
+  /**
+   * 设置动态请求头规则 (CORS)
+   */
+  private async setupHeaderRules(): Promise<void> {
+    if (this.headerRuleIds.length > 0) return
+    if (!this.runtime.headerRules) return
+
+    const ruleId = await this.runtime.headerRules.add({
+      urlFilter: '*://mp.xueqiu.com/xq/*',
+      headers: {
+        'Origin': 'https://mp.xueqiu.com',
+        'Referer': 'https://mp.xueqiu.com/',
+      },
+      resourceTypes: ['xmlhttprequest'],
+    })
+    this.headerRuleIds.push(ruleId)
+
+    logger.debug('Header rules added:', this.headerRuleIds)
+  }
+
+  /**
+   * 清除动态请求头规则
+   */
+  private async clearHeaderRules(): Promise<void> {
+    if (!this.runtime.headerRules) return
+    for (const ruleId of this.headerRuleIds) {
+      await this.runtime.headerRules.remove(ruleId)
+    }
+    this.headerRuleIds = []
+    logger.debug('Header rules cleared')
+  }
 
   async checkAuth(): Promise<AuthResult> {
     try {
@@ -76,6 +110,9 @@ export class XueqiuAdapter extends CodeAdapter {
   }
 
   async publish(article: Article, options?: PublishOptions): Promise<SyncResult> {
+    // 设置请求头规则
+    await this.setupHeaderRules()
+
     try {
       logger.info('Starting publish...')
 
@@ -194,12 +231,18 @@ export class XueqiuAdapter extends CodeAdapter {
       const postId = res.id
       const draftUrl = `https://mp.xueqiu.com/write/draft/${postId}`
 
-      return this.createResult(true, {
+      const result = this.createResult(true, {
         postId: String(postId),
         postUrl: draftUrl,
         draftOnly: options?.draftOnly ?? true,
       })
+
+      // 清除请求头规则
+      await this.clearHeaderRules()
+      return result
     } catch (error) {
+      // 清除请求头规则
+      await this.clearHeaderRules()
       return this.createResult(false, {
         error: (error as Error).message,
       })

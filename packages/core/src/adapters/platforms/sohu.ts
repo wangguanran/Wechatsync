@@ -1,10 +1,11 @@
 /**
  * 搜狐号适配器
  */
-import { CodeAdapter, type ImageUploadResult, markdownToHtml } from '@wechatsync/core'
-import type { Article, AuthResult, SyncResult, PlatformMeta } from '@wechatsync/core'
-import type { PublishOptions } from '@wechatsync/core'
-import { createLogger } from '../lib/logger'
+import { CodeAdapter, type ImageUploadResult } from '../code-adapter'
+import type { Article, AuthResult, SyncResult, PlatformMeta } from '../../types'
+import type { PublishOptions } from '../types'
+import { markdownToHtml } from '../../lib'
+import { createLogger } from '../../lib/logger'
 
 const logger = createLogger('Sohu')
 
@@ -38,6 +39,39 @@ export class SohuAdapter extends CodeAdapter {
   private accountInfo: SohuAccountInfo | null = null
   private deviceId: string = generateDeviceId()
   private spCm: string = ''
+  private headerRuleIds: string[] = []
+
+  /**
+   * 设置动态请求头规则 (CORS)
+   */
+  private async setupHeaderRules(): Promise<void> {
+    if (this.headerRuleIds.length > 0) return
+    if (!this.runtime.headerRules) return
+
+    const ruleId = await this.runtime.headerRules.add({
+      urlFilter: '*://mp.sohu.com/*',
+      headers: {
+        'Origin': 'https://mp.sohu.com',
+        'Referer': 'https://mp.sohu.com/',
+      },
+      resourceTypes: ['xmlhttprequest'],
+    })
+    this.headerRuleIds.push(ruleId)
+
+    logger.debug('Header rules added:', this.headerRuleIds)
+  }
+
+  /**
+   * 清除动态请求头规则
+   */
+  private async clearHeaderRules(): Promise<void> {
+    if (!this.runtime.headerRules) return
+    for (const ruleId of this.headerRuleIds) {
+      await this.runtime.headerRules.remove(ruleId)
+    }
+    this.headerRuleIds = []
+    logger.debug('Header rules cleared')
+  }
 
   async checkAuth(): Promise<AuthResult> {
     try {
@@ -80,19 +114,22 @@ export class SohuAdapter extends CodeAdapter {
   }
 
   /**
-   * 获取 sp-cm 值 (从 mp-cv cookie)
+   * 获取 sp-cm 值 (从 cookie 或生成)
    */
   private async fetchSpCm(): Promise<void> {
     try {
-      const cookies = await chrome.cookies.getAll({ domain: '.sohu.com', name: 'mp-cv' })
-      if (cookies.length > 0) {
-        this.spCm = cookies[0].value
-        logger.debug('Got sp-cm from cookie:', this.spCm)
-      } else {
-        // 如果没有 cookie，生成一个
-        this.spCm = `100-${Date.now()}-${generateDeviceId()}`
-        logger.debug('Generated sp-cm:', this.spCm)
+      // 尝试通过 runtime 获取 cookie（如果支持）
+      if (this.runtime.getCookie) {
+        const cookieValue = await this.runtime.getCookie('.sohu.com', 'mp-cv')
+        if (cookieValue) {
+          this.spCm = cookieValue
+          logger.debug('Got sp-cm from cookie:', this.spCm)
+          return
+        }
       }
+      // fallback: 生成一个
+      this.spCm = `100-${Date.now()}-${generateDeviceId()}`
+      logger.debug('Generated sp-cm:', this.spCm)
     } catch (error) {
       // fallback: 生成一个
       this.spCm = `100-${Date.now()}-${generateDeviceId()}`
@@ -101,6 +138,9 @@ export class SohuAdapter extends CodeAdapter {
   }
 
   async publish(article: Article, options?: PublishOptions): Promise<SyncResult> {
+    // 设置请求头规则
+    await this.setupHeaderRules()
+
     try {
       logger.info('Starting publish...')
 
@@ -188,12 +228,18 @@ export class SohuAdapter extends CodeAdapter {
       const postId = res.data
       const draftUrl = `https://mp.sohu.com/mpfe/v4/contentManagement/news/addarticle?spm=smmp.articlelist.0.0&contentStatus=2&id=${postId}`
 
-      return this.createResult(true, {
+      const result = this.createResult(true, {
         postId: String(postId),
         postUrl: draftUrl,
         draftOnly: options?.draftOnly ?? true,
       })
+
+      // 清除请求头规则
+      await this.clearHeaderRules()
+      return result
     } catch (error) {
+      // 清除请求头规则
+      await this.clearHeaderRules()
       return this.createResult(false, {
         error: (error as Error).message,
       })

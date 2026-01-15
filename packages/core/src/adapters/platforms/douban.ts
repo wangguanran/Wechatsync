@@ -1,10 +1,12 @@
 /**
  * 豆瓣适配器
  */
-import { CodeAdapter, type ImageUploadResult, htmlToMarkdown, markdownToDraft, markdownToHtml, type DoubanImageData } from '@wechatsync/core'
-import type { Article, AuthResult, SyncResult, PlatformMeta } from '@wechatsync/core'
-import type { PublishOptions } from '@wechatsync/core'
-import { createLogger } from '../lib/logger'
+import { CodeAdapter, type ImageUploadResult } from '../code-adapter'
+import type { Article, AuthResult, SyncResult, PlatformMeta } from '../../types'
+import type { DoubanImageData } from '../../lib'
+import type { PublishOptions } from '../types'
+import { htmlToMarkdown, markdownToHtml, markdownToDraft } from '../../lib'
+import { createLogger } from '../../lib/logger'
 
 const logger = createLogger('Douban')
 
@@ -32,6 +34,39 @@ export class DoubanAdapter extends CodeAdapter {
   private avatar: string = ''
   private formData: DoubanFormData | null = null
   private postParams: DoubanPostParams | null = null
+  private headerRuleIds: string[] = []
+
+  /**
+   * 设置动态请求头规则 (CORS)
+   */
+  private async setupHeaderRules(): Promise<void> {
+    if (this.headerRuleIds.length > 0) return
+    if (!this.runtime.headerRules) return
+
+    const ruleId = await this.runtime.headerRules.add({
+      urlFilter: '*://www.douban.com/*',
+      headers: {
+        'Origin': 'https://www.douban.com',
+        'Referer': 'https://www.douban.com',
+      },
+      resourceTypes: ['xmlhttprequest'],
+    })
+    this.headerRuleIds.push(ruleId)
+
+    logger.debug('Header rules added:', this.headerRuleIds)
+  }
+
+  /**
+   * 清除动态请求头规则
+   */
+  private async clearHeaderRules(): Promise<void> {
+    if (!this.runtime.headerRules) return
+    for (const ruleId of this.headerRuleIds) {
+      await this.runtime.headerRules.remove(ruleId)
+    }
+    this.headerRuleIds = []
+    logger.debug('Header rules cleared')
+  }
 
   async checkAuth(): Promise<AuthResult> {
     try {
@@ -99,6 +134,9 @@ export class DoubanAdapter extends CodeAdapter {
   }
 
   async publish(article: Article, options?: PublishOptions): Promise<SyncResult> {
+    // 设置请求头规则
+    await this.setupHeaderRules()
+
     try {
       logger.info('Starting publish...')
 
@@ -175,12 +213,18 @@ export class DoubanAdapter extends CodeAdapter {
       // 豆瓣草稿只能在 /note/create 页面查看
       const draftUrl = 'https://www.douban.com/note/create'
 
-      return this.createResult(true, {
+      const result = this.createResult(true, {
         postId: this.formData!.note_id,
         postUrl: draftUrl,
         draftOnly: options?.draftOnly ?? true,
       })
+
+      // 清除请求头规则
+      await this.clearHeaderRules()
+      return result
     } catch (error) {
+      // 清除请求头规则
+      await this.clearHeaderRules()
       return this.createResult(false, {
         error: (error as Error).message,
       })

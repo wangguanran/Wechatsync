@@ -1,10 +1,12 @@
 /**
  * 知乎适配器
  */
-import { CodeAdapter, type ImageUploadResult, processHtml } from '@wechatsync/core'
-import type { Article, AuthResult, SyncResult, PlatformMeta, PublishOptions } from '@wechatsync/core'
+import { CodeAdapter, type ImageUploadResult } from '../code-adapter'
+import type { Article, AuthResult, SyncResult, PlatformMeta } from '../../types'
+import type { PublishOptions } from '../types'
+import { processHtml } from '../../lib'
+import { createLogger } from '../../lib/logger'
 import md5Lib from 'js-md5'
-import { createLogger } from '../lib/logger'
 
 const logger = createLogger('Zhihu')
 
@@ -18,6 +20,60 @@ export class ZhihuAdapter extends CodeAdapter {
     icon: 'https://static.zhihu.com/static/favicon.ico',
     homepage: 'https://www.zhihu.com',
     capabilities: ['article', 'draft', 'image_upload', 'tags', 'cover'],
+  }
+
+  private headerRuleIds: string[] = []
+
+  /**
+   * 设置动态请求头规则
+   */
+  private async setupHeaderRules(): Promise<void> {
+    if (this.headerRuleIds.length > 0) return
+    if (!this.runtime.headerRules) return
+
+    // www.zhihu.com/api/
+    const ruleId1 = await this.runtime.headerRules.add({
+      urlFilter: '*://www.zhihu.com/api/*',
+      headers: {
+        'x-requested-with': 'fetch',
+      },
+      resourceTypes: ['xmlhttprequest'],
+    })
+    this.headerRuleIds.push(ruleId1)
+
+    // zhuanlan.zhihu.com/api/
+    const ruleId2 = await this.runtime.headerRules.add({
+      urlFilter: '*://zhuanlan.zhihu.com/api/*',
+      headers: {
+        'x-requested-with': 'fetch',
+      },
+      resourceTypes: ['xmlhttprequest'],
+    })
+    this.headerRuleIds.push(ruleId2)
+
+    // api.zhihu.com/
+    const ruleId3 = await this.runtime.headerRules.add({
+      urlFilter: '*://api.zhihu.com/*',
+      headers: {
+        'x-requested-with': 'fetch',
+      },
+      resourceTypes: ['xmlhttprequest'],
+    })
+    this.headerRuleIds.push(ruleId3)
+
+    logger.debug('Header rules added:', this.headerRuleIds)
+  }
+
+  /**
+   * 清除动态请求头规则
+   */
+  private async clearHeaderRules(): Promise<void> {
+    if (!this.runtime.headerRules) return
+    for (const ruleId of this.headerRuleIds) {
+      await this.runtime.headerRules.remove(ruleId)
+    }
+    this.headerRuleIds = []
+    logger.debug('Header rules cleared')
   }
 
   async checkAuth(): Promise<AuthResult> {
@@ -53,6 +109,9 @@ export class ZhihuAdapter extends CodeAdapter {
   }
 
   async publish(article: Article, options?: PublishOptions): Promise<SyncResult> {
+    // 设置请求头规则
+    await this.setupHeaderRules()
+
     try {
       logger.info('Starting publish...')
 
@@ -156,12 +215,18 @@ export class ZhihuAdapter extends CodeAdapter {
 
       const draftUrl = `https://zhuanlan.zhihu.com/p/${draftId}/edit`
 
-      return this.createResult(true, {
+      const result = this.createResult(true, {
         postId: draftId,
         postUrl: draftUrl,
         draftOnly: options?.draftOnly ?? true,
       })
+
+      // 清除请求头规则
+      await this.clearHeaderRules()
+      return result
     } catch (error) {
+      // 清除请求头规则
+      await this.clearHeaderRules()
       return this.createResult(false, {
         error: (error as Error).message,
       })
@@ -432,7 +497,7 @@ export class ZhihuAdapter extends CodeAdapter {
     try {
       if (this.runtime.headerRules) {
         ruleId = await this.runtime.headerRules.add({
-          urlFilter: '*zhimg.com*',
+          urlFilter: '*://zhihu-pics-upload.zhimg.com/*',
           headers: {
             'Origin': 'https://zhuanlan.zhihu.com',
             'Referer': 'https://zhuanlan.zhihu.com/',

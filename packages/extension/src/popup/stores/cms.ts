@@ -26,7 +26,7 @@ interface CMSState {
   testConnection: (id: string) => Promise<{ success: boolean; error?: string }>
 }
 
-export const useCMSStore = create<CMSState>((set, get) => ({
+export const useCMSStore = create<CMSState>((set) => ({
   accounts: [],
   loading: false,
 
@@ -44,7 +44,9 @@ export const useCMSStore = create<CMSState>((set, get) => ({
 
   addAccount: async (accountData) => {
     try {
-      const { accounts } = get()
+      // 直接从 storage 读取，避免 Zustand state 未加载导致覆盖
+      const storage = await chrome.storage.local.get('cmsAccounts')
+      const accounts: CMSAccount[] = storage.cmsAccounts || []
       const id = `cms_${Date.now()}`
 
       const newAccount: CMSAccount = {
@@ -89,7 +91,9 @@ export const useCMSStore = create<CMSState>((set, get) => ({
 
   removeAccount: async (id: string) => {
     try {
-      const { accounts } = get()
+      // 直接从 storage 读取，避免 state 未加载导致覆盖
+      const storage = await chrome.storage.local.get('cmsAccounts')
+      const accounts: CMSAccount[] = storage.cmsAccounts || []
       const updatedAccounts = accounts.filter(a => a.id !== id)
       await chrome.storage.local.set({ cmsAccounts: updatedAccounts })
       await chrome.storage.local.remove(`cms_pwd_${id}`)
@@ -101,13 +105,14 @@ export const useCMSStore = create<CMSState>((set, get) => ({
 
   testConnection: async (id: string) => {
     try {
-      const { accounts } = get()
+      // 直接从 storage 读取，确保数据最新
+      const storage = await chrome.storage.local.get(['cmsAccounts', `cms_pwd_${id}`])
+      const accounts: CMSAccount[] = storage.cmsAccounts || []
       const account = accounts.find(a => a.id === id)
       if (!account) {
         return { success: false, error: '账户不存在' }
       }
 
-      const storage = await chrome.storage.local.get(`cms_pwd_${id}`)
       const password = storage[`cms_pwd_${id}`]
 
       const result = await chrome.runtime.sendMessage({

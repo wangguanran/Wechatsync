@@ -8,7 +8,7 @@ import {
   trackChurnSignal,
   trackImplicitFeedback,
 } from '../../lib/analytics'
-import { checkSyncFrequency, recordSync } from '../../lib/rate-limit'
+import { checkSyncFrequency } from '../../lib/rate-limit'
 import { createLogger } from '../../lib/logger'
 
 const logger = createLogger('SyncStore')
@@ -428,14 +428,6 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         imageProgress: null,
         rateLimitWarning,
       })
-
-      // 记录同步（用于频率限制检查）
-      const successfulPlatforms = resultsWithNames
-        .filter((r: SyncResult) => r.success)
-        .map((r: SyncResult) => r.platform)
-      if (successfulPlatforms.length > 0) {
-        recordSync(successfulPlatforms).catch(() => {})
-      }
 
       // 追踪流失预警：多次失败
       const failedCount = resultsWithNames.filter((r: SyncResult) => !r.success).length

@@ -5,6 +5,9 @@
 import type { Article, AuthResult, SyncResult, PlatformMeta } from '../types'
 import type { RuntimeInterface } from '../runtime/interface'
 import type { PlatformAdapter, PublishOptions } from './types'
+import { createLogger } from '../lib/logger'
+
+const logger = createLogger('CodeAdapter')
 
 /**
  * 图片上传结果
@@ -184,7 +187,7 @@ export abstract class CodeAdapter implements PlatformAdapter {
       return content
     }
 
-    console.log(`[CodeAdapter] Found ${matches.length} images to process (HTML + Markdown)`)
+    logger.debug(`Found ${matches.length} images to process (HTML + Markdown)`)
 
     let result = content
     const uploadedMap = new Map<string, ImageUploadResult>()
@@ -198,7 +201,7 @@ export abstract class CodeAdapter implements PlatformAdapter {
       if (!src.startsWith('data:')) {
         const shouldSkip = skipPatterns.some(pattern => src.includes(pattern))
         if (shouldSkip) {
-          console.log(`[CodeAdapter] Skipping matched pattern: ${src}`)
+          logger.debug(`Skipping matched pattern: ${src}`)
           continue
         }
       }
@@ -211,7 +214,7 @@ export abstract class CodeAdapter implements PlatformAdapter {
         let uploadResult = uploadedMap.get(src)
 
         if (!uploadResult) {
-          console.log(`[CodeAdapter] Uploading image ${processed}/${matches.length}: ${src.startsWith('data:') ? 'data URI' : src}`)
+          logger.debug(`Uploading image ${processed}/${matches.length}: ${src.startsWith('data:') ? 'data URI' : src}`)
           // uploadFn 应该能处理 URL 和 data URI（通过 fetch）
           uploadResult = await uploadFn(src)
           uploadedMap.set(src, uploadResult)
@@ -236,9 +239,9 @@ export abstract class CodeAdapter implements PlatformAdapter {
         // 替换原内容
         result = result.replace(full, replacement)
 
-        console.log(`[CodeAdapter] Image uploaded: ${uploadResult.url}`)
+        logger.debug(`Image uploaded: ${uploadResult.url}`)
       } catch (error) {
-        console.error(`[CodeAdapter] Failed to upload image: ${src}`, error)
+        logger.error(`Failed to upload image: ${src}`, error)
         // 继续处理其他图片
       }
 

@@ -1,10 +1,11 @@
 /**
  * 头条适配器
  */
-import { CodeAdapter, type ImageUploadResult, markdownToHtml } from '@wechatsync/core'
-import type { Article, AuthResult, SyncResult, PlatformMeta } from '@wechatsync/core'
-import type { PublishOptions } from '@wechatsync/core'
-import { createLogger } from '../lib/logger'
+import { CodeAdapter, type ImageUploadResult } from '../code-adapter'
+import type { Article, AuthResult, SyncResult, PlatformMeta } from '../../types'
+import type { PublishOptions } from '../types'
+import { markdownToHtml } from '../../lib'
+import { createLogger } from '../../lib/logger'
 
 const logger = createLogger('Toutiao')
 
@@ -15,6 +16,40 @@ export class ToutiaoAdapter extends CodeAdapter {
     icon: 'https://sf1-ttcdn-tos.pstatp.com/obj/ttfe/pgcfe/sz/mp_logo.png',
     homepage: 'https://mp.toutiao.com/profile_v4/graphic/publish',
     capabilities: ['article', 'draft', 'image_upload', 'cover'],
+  }
+
+  private headerRuleIds: string[] = []
+
+  /**
+   * 设置动态请求头规则 (CORS)
+   */
+  private async setupHeaderRules(): Promise<void> {
+    if (this.headerRuleIds.length > 0) return
+    if (!this.runtime.headerRules) return
+
+    const ruleId = await this.runtime.headerRules.add({
+      urlFilter: '*://mp.toutiao.com/*',
+      headers: {
+        'Origin': 'https://mp.toutiao.com',
+        'Referer': 'https://mp.toutiao.com/profile_v4/graphic/publish',
+      },
+      resourceTypes: ['xmlhttprequest'],
+    })
+    this.headerRuleIds.push(ruleId)
+
+    logger.debug('Header rules added:', this.headerRuleIds)
+  }
+
+  /**
+   * 清除动态请求头规则
+   */
+  private async clearHeaderRules(): Promise<void> {
+    if (!this.runtime.headerRules) return
+    for (const ruleId of this.headerRuleIds) {
+      await this.runtime.headerRules.remove(ruleId)
+    }
+    this.headerRuleIds = []
+    logger.debug('Header rules cleared')
   }
 
   async checkAuth(): Promise<AuthResult> {
@@ -42,16 +77,6 @@ export class ToutiaoAdapter extends CodeAdapter {
   }
 
   /**
-   * 获取 tt-anti-token
-   */
-  private async getAntiToken(): Promise<string> {
-    const res = await this.get<{
-      data?: { token: string }
-    }>('https://mp.toutiao.com/tt-anti-token')
-    return res.data?.token || ''
-  }
-
-  /**
    * 获取 x-secsdk-csrf-token
    */
   private async getCsrfToken(): Promise<string> {
@@ -68,6 +93,9 @@ export class ToutiaoAdapter extends CodeAdapter {
   }
 
   async publish(article: Article, options?: PublishOptions): Promise<SyncResult> {
+    // 设置请求头规则
+    await this.setupHeaderRules()
+
     try {
       logger.info('Starting publish...')
 
@@ -103,7 +131,8 @@ export class ToutiaoAdapter extends CodeAdapter {
       )
 
       // 4. 处理封面 (暂时禁用以排查问题)
-      const coverInfo: ImageUploadResult | null = null
+      // TODO: 后续需要重新启用封面上传
+      // let coverInfo: ImageUploadResult | null = null
       // if (article.cover) {
       //   try {
       //     coverInfo = await this.uploadImageByUrl(article.cover)
@@ -174,12 +203,18 @@ export class ToutiaoAdapter extends CodeAdapter {
       const draftId = res.data.pgc_id
       const draftUrl = `https://mp.toutiao.com/profile_v4/graphic/publish?pgc_id=${draftId}`
 
-      return this.createResult(true, {
+      const result = this.createResult(true, {
         postId: draftId,
         postUrl: draftUrl,
         draftOnly: options?.draftOnly ?? true,
       })
+
+      // 清除请求头规则
+      await this.clearHeaderRules()
+      return result
     } catch (error) {
+      // 清除请求头规则
+      await this.clearHeaderRules()
       return this.createResult(false, {
         error: (error as Error).message,
       })
@@ -190,8 +225,12 @@ export class ToutiaoAdapter extends CodeAdapter {
    * 确保头条 tab 存在，如果不存在则自动创建
    */
   private async ensureToutiaoTab(): Promise<number> {
+    if (!this.runtime.tabs) {
+      throw new Error('头条发布需要浏览器 tabs API 支持')
+    }
+
     // 查找已存在的头条页面 tab
-    const tabs = await chrome.tabs.query({ url: 'https://mp.toutiao.com/*' })
+    const tabs = await this.runtime.tabs.query('https://mp.toutiao.com/*')
 
     if (tabs.length > 0 && tabs[0].id) {
       return tabs[0].id
@@ -199,35 +238,20 @@ export class ToutiaoAdapter extends CodeAdapter {
 
     // 没有则创建新 tab
     logger.info('No existing tab found, creating new one...')
-    const tab = await chrome.tabs.create({
-      url: 'https://mp.toutiao.com/profile_v4/graphic/publish',
-      active: false, // 后台打开
-    })
+    const tab = await this.runtime.tabs.create(
+      'https://mp.toutiao.com/profile_v4/graphic/publish',
+      false // 后台打开
+    )
 
     // 等待页面加载完成
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        chrome.tabs.onUpdated.removeListener(listener)
-        reject(new Error('头条页面加载超时'))
-      }, 30000) // 30秒超时
-
-      const listener = (tabId: number, info: chrome.tabs.TabChangeInfo) => {
-        if (tabId === tab.id && info.status === 'complete') {
-          clearTimeout(timeout)
-          chrome.tabs.onUpdated.removeListener(listener)
-          // 额外等待一下让页面 JS 初始化
-          setTimeout(() => resolve(), 1000)
-        }
-      }
-      chrome.tabs.onUpdated.addListener(listener)
-    })
+    await this.runtime.tabs.waitForLoad(tab.id, 30000)
 
     logger.info('New tab created and loaded:', tab.id)
-    return tab.id!
+    return tab.id
   }
 
   /**
-   * 通过 chrome.scripting.executeScript 在页面上下文执行 fetch
+   * 通过 runtime.tabs.executeScript 在页面上下文执行 fetch
    * 页面会自动注入 msToken/a_bogus 等反爬参数
    */
   private async publishViaContentScript(url: string, body: string): Promise<{
@@ -235,15 +259,21 @@ export class ToutiaoAdapter extends CodeAdapter {
     data?: { pgc_id: string }
     message?: string
   }> {
+    if (!this.runtime.tabs) {
+      throw new Error('头条发布需要浏览器 tabs API 支持')
+    }
+
     // 确保有头条 tab
     const tabId = await this.ensureToutiaoTab()
     logger.debug('Using tab:', tabId, 'to execute fetch in MAIN world')
 
     // 在页面上下文 (MAIN world) 执行 fetch
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'MAIN',
-      func: async (fetchUrl: string, fetchBody: string) => {
+    const result = await this.runtime.tabs.executeScript<
+      { success: boolean; data?: unknown; error?: string },
+      [string, string]
+    >(
+      tabId,
+      async (fetchUrl: string, fetchBody: string) => {
         try {
           const response = await fetch(fetchUrl, {
             method: 'POST',
@@ -259,10 +289,8 @@ export class ToutiaoAdapter extends CodeAdapter {
           return { success: false, error: (error as Error).message }
         }
       },
-      args: [url, body],
-    })
-
-    const result = results[0]?.result as { success: boolean; data?: unknown; error?: string }
+      [url, body]
+    )
 
     if (!result || !result.success) {
       throw new Error(result?.error || '发布请求失败')

@@ -87,7 +87,10 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
 
   // 删除 CMS 账户
   const deleteCmsAccount = async (id: string) => {
-    const updated = cmsAccounts.filter(a => a.id !== id)
+    // 直接从 storage 读取最新数据，避免多窗口操作时覆盖
+    const storage = await chrome.storage.local.get('cmsAccounts')
+    const accounts: CMSAccount[] = storage.cmsAccounts || []
+    const updated = accounts.filter(a => a.id !== id)
     await chrome.storage.local.set({ cmsAccounts: updated })
     await chrome.storage.local.remove(`cms_pwd_${id}`)
     setCmsAccounts(updated)
@@ -242,7 +245,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
             <h3 className="text-sm font-medium text-muted-foreground">关于</h3>
 
             <div className="text-xs text-muted-foreground space-y-1">
-              <p>微信公众号同步助手 v2.0.0</p>
+              <p>微信公众号同步助手 v{chrome.runtime.getManifest().version}</p>
               <p>支持 20+ 平台一键同步</p>
             </div>
 

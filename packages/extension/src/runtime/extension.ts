@@ -6,7 +6,9 @@ import type { Cookie, HeaderRule } from '@wechatsync/core'
  */
 export class ExtensionRuntime implements RuntimeInterface {
   readonly type = 'extension' as const
-  private ruleIdCounter = 1
+  // 使用时间戳+随机数避免规则 ID 冲突（扩展重载或并发场景）
+  private ruleIdBase = Date.now() % 100000
+  private ruleIdCounter = 0
 
   constructor(private config?: RuntimeConfig) {}
 
@@ -60,6 +62,14 @@ export class ExtensionRuntime implements RuntimeInterface {
   }
 
   /**
+   * 获取单个 Cookie 值（便捷方法）
+   */
+  async getCookie(domain: string, name: string): Promise<string | null> {
+    const cookies = await chrome.cookies.getAll({ domain, name })
+    return cookies.length > 0 ? cookies[0].value : null
+  }
+
+  /**
    * 持久化存储
    */
   storage = {
@@ -93,10 +103,12 @@ export class ExtensionRuntime implements RuntimeInterface {
 
   /**
    * Header 规则管理 (declarativeNetRequest)
+   * 规则只对扩展自身发起的请求生效，不影响其他网页
    */
   headerRules = {
     add: async (rule: HeaderRule): Promise<string> => {
-      const ruleId = this.ruleIdCounter++
+      // 组合 base + counter 生成唯一 ID，避免冲突
+      const ruleId = this.ruleIdBase + this.ruleIdCounter++
       const id = `rule_${ruleId}`
 
       await chrome.declarativeNetRequest.updateDynamicRules({
@@ -116,9 +128,10 @@ export class ExtensionRuntime implements RuntimeInterface {
             },
             condition: {
               urlFilter: rule.urlFilter,
+              // 只对扩展自身发起的请求生效，不影响其他网页
+              initiatorDomains: [chrome.runtime.id],
               resourceTypes: (rule.resourceTypes || [
                 'xmlhttprequest',
-                'main_frame',
               ]) as chrome.declarativeNetRequest.ResourceType[],
             },
           },
@@ -140,6 +153,56 @@ export class ExtensionRuntime implements RuntimeInterface {
       await chrome.declarativeNetRequest.updateDynamicRules({
         removeRuleIds: rules.map(r => r.id),
       })
+    },
+  }
+
+  /**
+   * Tab 管理
+   */
+  tabs = {
+    async query(urlPattern: string): Promise<Array<{ id: number; url?: string }>> {
+      const tabs = await chrome.tabs.query({ url: urlPattern })
+      return tabs.filter(t => t.id !== undefined).map(t => ({ id: t.id!, url: t.url }))
+    },
+
+    async create(url: string, active = false): Promise<{ id: number }> {
+      const tab = await chrome.tabs.create({ url, active })
+      return { id: tab.id! }
+    },
+
+    async waitForLoad(tabId: number, timeout = 30000): Promise<void> {
+      return new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          chrome.tabs.onUpdated.removeListener(listener)
+          reject(new Error('Tab load timeout'))
+        }, timeout)
+
+        const listener = (updatedTabId: number, info: chrome.tabs.TabChangeInfo) => {
+          if (updatedTabId === tabId && info.status === 'complete') {
+            clearTimeout(timeoutId)
+            chrome.tabs.onUpdated.removeListener(listener)
+            // 额外等待让页面 JS 初始化
+            setTimeout(resolve, 1000)
+          }
+        }
+        chrome.tabs.onUpdated.addListener(listener)
+      })
+    },
+
+    async executeScript<T, A extends unknown[]>(
+      tabId: number,
+      func: (...args: A) => T | Promise<T>,
+      args: A
+    ): Promise<T> {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: func as (...args: unknown[]) => unknown,
+        args: args as unknown[],
+      })
+
+      const result = results[0]?.result as T
+      return result
     },
   }
 

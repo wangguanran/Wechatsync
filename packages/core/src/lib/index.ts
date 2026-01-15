@@ -6,3 +6,9 @@ export * from './turndown'
 
 // Markdown to Draft.js 转换 (豆瓣等)
 export * from './markdown-to-draft'
+
+// 日志系统
+export * from './logger'
+
+// AWS4 签名（用于字节跳动 ImageX 等）
+export * from './aws4'

@@ -1,10 +1,11 @@
 /**
  * 掘金适配器
  */
-import { CodeAdapter, type ImageUploadResult, htmlToMarkdown } from '@wechatsync/core'
-import type { Article, AuthResult, SyncResult, PlatformMeta, PublishOptions } from '@wechatsync/core'
-import { createLogger } from '../lib/logger'
-import { signAWS4, crc32 } from '../lib/aws4'
+import { CodeAdapter, type ImageUploadResult } from '../code-adapter'
+import type { Article, AuthResult, SyncResult, PlatformMeta } from '../../types'
+import type { PublishOptions } from '../types'
+import { htmlToMarkdown, signAWS4, crc32 } from '../../lib'
+import { createLogger } from '../../lib/logger'
 
 const logger = createLogger('Juejin')
 

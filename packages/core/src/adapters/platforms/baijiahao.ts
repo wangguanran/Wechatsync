@@ -1,10 +1,11 @@
 /**
  * 百家号适配器
  */
-import { CodeAdapter, type ImageUploadResult, markdownToHtml } from '@wechatsync/core'
-import type { Article, AuthResult, SyncResult, PlatformMeta } from '@wechatsync/core'
-import type { PublishOptions } from '@wechatsync/core'
-import { createLogger } from '../lib/logger'
+import { CodeAdapter, type ImageUploadResult } from '../code-adapter'
+import type { Article, AuthResult, SyncResult, PlatformMeta } from '../../types'
+import type { PublishOptions } from '../types'
+import { markdownToHtml } from '../../lib'
+import { createLogger } from '../../lib/logger'
 
 const logger = createLogger('Baijiahao')
 
@@ -25,6 +26,39 @@ export class BaijiahaoAdapter extends CodeAdapter {
 
   private userInfo: BaijiahaoUserInfo | null = null
   private authToken: string = ''
+  private headerRuleIds: string[] = []
+
+  /**
+   * 设置动态请求头规则 (CORS)
+   */
+  private async setupHeaderRules(): Promise<void> {
+    if (this.headerRuleIds.length > 0) return
+    if (!this.runtime.headerRules) return
+
+    const ruleId = await this.runtime.headerRules.add({
+      urlFilter: '*://baijiahao.baidu.com/*',
+      headers: {
+        'Origin': 'https://baijiahao.baidu.com',
+        'Referer': 'https://baijiahao.baidu.com/',
+      },
+      resourceTypes: ['xmlhttprequest'],
+    })
+    this.headerRuleIds.push(ruleId)
+
+    logger.debug('Header rules added:', this.headerRuleIds)
+  }
+
+  /**
+   * 清除动态请求头规则
+   */
+  private async clearHeaderRules(): Promise<void> {
+    if (!this.runtime.headerRules) return
+    for (const ruleId of this.headerRuleIds) {
+      await this.runtime.headerRules.remove(ruleId)
+    }
+    this.headerRuleIds = []
+    logger.debug('Header rules cleared')
+  }
 
   async checkAuth(): Promise<AuthResult> {
     try {
@@ -53,16 +87,12 @@ export class BaijiahaoAdapter extends CodeAdapter {
     }
   }
 
-  /**
-   * 获取 Auth Token (从编辑页面解析)
-   */
   private async fetchAuthToken(): Promise<string> {
     const response = await this.runtime.fetch('https://baijiahao.baidu.com/builder/rc/edit', {
       credentials: 'include',
     })
     const html = await response.text()
 
-    // 新格式: window.__BJH__INIT__AUTH__ = 'eyJ...'
     const match = html.match(/window\.__BJH__INIT__AUTH__\s*=\s*['"]([^'"]+)['"]/)
     if (!match) {
       throw new Error('登录失效，请重新登录百家号')
@@ -74,10 +104,12 @@ export class BaijiahaoAdapter extends CodeAdapter {
   }
 
   async publish(article: Article, options?: PublishOptions): Promise<SyncResult> {
+    // 设置请求头规则
+    await this.setupHeaderRules()
+
     try {
       logger.info('Starting publish...')
 
-      // 1. 确保已登录
       if (!this.userInfo) {
         const auth = await this.checkAuth()
         if (!auth.isAuthenticated) {
@@ -85,13 +117,10 @@ export class BaijiahaoAdapter extends CodeAdapter {
         }
       }
 
-      // 2. 获取 Auth Token
       this.authToken = await this.fetchAuthToken()
 
-      // 3. 获取 HTML 内容
       const rawHtml = article.html || markdownToHtml(article.markdown)
 
-      // 4. 清理内容
       let content = this.cleanHtml(rawHtml, {
         removeIframes: true,
         removeSvgImages: true,
@@ -99,7 +128,6 @@ export class BaijiahaoAdapter extends CodeAdapter {
         removeAttrs: ['data-reader-unique-id'],
       })
 
-      // 4. 处理图片
       content = await this.processImages(
         content,
         (src) => this.uploadImageByUrl(src),
@@ -109,7 +137,6 @@ export class BaijiahaoAdapter extends CodeAdapter {
         }
       )
 
-      // 5. 保存草稿
       const response = await this.runtime.fetch(
         'https://baijiahao.baidu.com/pcui/article/save?callback=bjhdraft',
         {
@@ -138,7 +165,6 @@ export class BaijiahaoAdapter extends CodeAdapter {
       )
 
       const text = await response.text()
-      // 解析 JSONP 响应: bjhdraft({...})
       const jsonStr = text.replace(/^bjhdraft\(/, '').replace(/\)$/, '')
       const res = JSON.parse(jsonStr) as {
         errno: number
@@ -155,30 +181,31 @@ export class BaijiahaoAdapter extends CodeAdapter {
       const postId = res.ret.article_id
       const draftUrl = `https://baijiahao.baidu.com/builder/rc/edit?type=news&article_id=${postId}`
 
-      return this.createResult(true, {
+      const result = this.createResult(true, {
         postId: postId,
         postUrl: draftUrl,
         draftOnly: options?.draftOnly ?? true,
       })
+
+      // 清除请求头规则
+      await this.clearHeaderRules()
+      return result
     } catch (error) {
+      // 清除请求头规则
+      await this.clearHeaderRules()
       return this.createResult(false, {
         error: (error as Error).message,
       })
     }
   }
 
-  /**
-   * 通过 URL 上传图片
-   */
   protected async uploadImageByUrl(src: string): Promise<ImageUploadResult> {
-    // 1. 下载图片
     const imageResponse = await fetch(src)
     if (!imageResponse.ok) {
       throw new Error('图片下载失败: ' + src)
     }
     const imageBlob = await imageResponse.blob()
 
-    // 2. 上传到百家号
     const formData = new FormData()
     formData.append('media', imageBlob, 'image.jpg')
     formData.append('type', 'image')
