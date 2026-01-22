@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Settings, RefreshCw, FileText, Loader2, Check, X, ExternalLink, ChevronDown, ChevronUp, Plus, Clock, Pencil } from 'lucide-react'
+import { Settings, RefreshCw, FileText, Loader2, Check, X, ExternalLink, ChevronDown, ChevronUp, Plus, Clock, Pencil, Download } from 'lucide-react'
 import { useSyncStore } from '../stores/sync'
 import { PlatformGrid, type Platform as GridPlatform } from '../components/PlatformGrid'
 import { SettingsDrawer } from '../components/SettingsDrawer'
 import { cn } from '@/lib/utils'
 import { trackPageView, trackFeatureDiscovery } from '../../lib/analytics'
 import { createLogger } from '../../lib/logger'
+import { getCachedUpdateInfo, dismissUpdate, type UpdateCheckResult } from '../../lib/version-check'
 
 const logger = createLogger('HomeNew')
 
@@ -41,6 +42,7 @@ export function HomeNew() {
   const [historyExpanded, setHistoryExpanded] = useState(false)
   const [allPlatforms, setAllPlatforms] = useState<GridPlatform[]>([])
   const [refreshing, setRefreshing] = useState(false)
+  const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null)
 
   // 加载数据（优先恢复同步状态）
   useEffect(() => {
@@ -51,6 +53,11 @@ export function HomeNew() {
       loadAllPlatforms()
       loadArticle()
       loadHistory()
+      // 加载版本更新信息
+      const cached = await getCachedUpdateInfo()
+      if (cached?.hasUpdate && cached.info) {
+        setUpdateInfo(cached)
+      }
     }
     init()
     // 追踪页面访问
@@ -164,6 +171,45 @@ export function HomeNew() {
 
       {/* 主内容 */}
       <main className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* 版本更新提示 */}
+        {updateInfo?.hasUpdate && updateInfo.info && (
+          <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-3 text-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+                <Download className="w-4 h-4" />
+                <span>新版本 v{updateInfo.info.version} 可用</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={updateInfo.info.downloadUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                >
+                  下载
+                </a>
+                <button
+                  onClick={async () => {
+                    if (updateInfo.info) {
+                      await dismissUpdate(updateInfo.info.version)
+                      // 清除扩展图标上的更新 badge
+                      chrome.runtime.sendMessage({ type: 'CLEAR_UPDATE_BADGE' }).catch(() => {})
+                      setUpdateInfo(null)
+                    }
+                  }}
+                  className="text-muted-foreground hover:text-foreground"
+                  title="忽略此版本"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            {updateInfo.info.releaseNotes && (
+              <p className="text-xs text-muted-foreground mt-1">{updateInfo.info.releaseNotes}</p>
+            )}
+          </div>
+        )}
+
         {/* 文章预览 */}
         <div className="bg-muted/50 rounded-lg p-3">
           {article ? (

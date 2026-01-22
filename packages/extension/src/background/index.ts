@@ -28,6 +28,7 @@ import {
   trackGrowthMetrics,
 } from '../lib/analytics'
 import { checkSyncFrequency, recordSync } from '../lib/rate-limit'
+import { checkForUpdates, isUpdateDismissed } from '../lib/version-check'
 
 const logger = createLogger('Background')
 
@@ -63,6 +64,7 @@ const BADGE_COLORS = {
   success: '#22C55E',   // 绿色
   error: '#EF4444',     // 红色
   partial: '#F59E0B',   // 橙色
+  update: '#8B5CF6',    // 紫色 - 有新版本
 }
 
 /**
@@ -141,6 +143,7 @@ type MessageAction =
   | { type: 'START_SYNC_FROM_EDITOR'; article: any; platforms: string[]; syncId?: string }
   | { type: 'UPLOAD_IMAGE'; payload: { src: string; platform?: string } }
   | { type: 'MAGIC_CALL'; payload: { methodName: string; data: any } }
+  | { type: 'CLEAR_UPDATE_BADGE' }
 
 /**
  * 消息处理
@@ -917,6 +920,13 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
       }
     }
 
+    case 'CLEAR_UPDATE_BADGE': {
+      // 清除版本更新 badge
+      await chrome.action.setBadgeText({ text: '' })
+      logger.info('Update badge cleared')
+      return { success: true }
+    }
+
     default:
       return { error: 'Unknown message type' }
   }
@@ -1092,6 +1102,21 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 // 首次启动时也追踪一次增长指标
 trackGrowthMetrics().catch(() => {})
+
+// 检查版本更新（用于 ZIP 安装用户）
+// 如有新版本，在扩展图标上显示 badge 提醒
+checkForUpdates().then(async (result) => {
+  if (result.hasUpdate && result.info) {
+    // 检查用户是否已忽略此版本
+    const isDismissed = await isUpdateDismissed(result.info.version)
+    if (!isDismissed) {
+      // 显示更新 badge
+      await chrome.action.setBadgeText({ text: 'NEW' })
+      await chrome.action.setBadgeBackgroundColor({ color: BADGE_COLORS.update })
+      logger.info('Update badge shown for version:', result.info.version)
+    }
+  }
+}).catch(() => {})
 
 /**
  * 清理遗留的动态规则（防止扩展崩溃后规则残留影响其他网站）

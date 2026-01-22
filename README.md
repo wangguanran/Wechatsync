@@ -1,25 +1,31 @@
-# 文章同步助手
+# 文章同步助手 (Wechatsync)
 
 ![](https://img.shields.io/github/v/release/wechatsync/Wechatsync.svg)
 ![](https://img.shields.io/github/last-commit/wechatsync/Wechatsync)
 ![](https://img.shields.io/github/issues/wechatsync/Wechatsync)
 
-一键同步文章到知乎、头条、掘金、小红书等 25+ 平台，支持 WordPress 等自建站。
+**开源免费**的跨平台文章同步工具 | Chrome 浏览器扩展 | 自媒体内容分发神器
+
+一键同步微信公众号文章到知乎、头条、掘金、小红书、CSDN 等 25+ 平台，支持 WordPress 等自建博客，告别重复复制粘贴。
+
+> 🔥 支持 **Anthropic MCP 协议**，可在 Claude Desktop / Claude Code 中通过 AI 一键发布文章
 
 ## 功能特性
 
-- **多平台同步**: 支持知乎、掘金、头条、CSDN、简书、微博、小红书等 25+ 平台
-- **自建站支持**: WordPress、Typecho、MetaWeblog API
+- **一键批量发布**: 微信公众号文章同步到知乎、掘金、头条、CSDN、简书、微博、小红书等 25+ 自媒体平台
+- **自建站支持**: WordPress、Typecho、博客园 (MetaWeblog API)
 - **智能提取**: 自动从网页提取文章标题、内容、封面图（基于 Safari 阅读模式）
-- **图片上传**: 自动上传文章图片到目标平台
-- **草稿模式**: 同步后保存为草稿，方便二次编辑
-- **MCP 集成**: 支持 Claude Code 通过 MCP 协议调用
+- **图片自动上传**: 自动转存文章图片到目标平台，无需手动处理
+- **草稿模式**: 同步后保存为草稿，方便二次编辑后发布
+- **MCP AI 集成**: 支持 Anthropic MCP 协议，配合 Claude Desktop / Claude Code 使用
 
 ## 安装方式
 
-### Chrome 商店安装
+### Chrome 浏览器扩展安装
 
-[Chrome 网上应用店](https://chrome.google.com/webstore/detail/%E5%BE%AE%E4%BF%A1%E5%90%8C%E6%AD%A5%E5%8A%A9%E6%89%8B/hchobocdmclopcbnibdnoafilagadion)
+**推荐**: [Chrome 网上应用店](https://chrome.google.com/webstore/detail/%E5%BE%AE%E4%BF%A1%E5%90%8C%E6%AD%A5%E5%8A%A9%E6%89%8B/hchobocdmclopcbnibdnoafilagadion) (自动更新)
+
+**手动安装**: 下载 [最新 Release](https://wpics.oss-cn-shanghai.aliyuncs.com/wechatsync-2.0.3.zip?date=20260118) 解压后加载到 Chrome 扩展
 
 
 ## 支持的平台
@@ -54,9 +60,9 @@
 
 - [提交新平台请求](https://airtable.com/shrLSJMnTC2BlmP29)
 
-## Claude Code 集成
+## Claude Code / Claude Desktop 集成 (Anthropic MCP)
 
-通过 MCP 协议，可以在 Claude Code 中直接使用文章同步助手。
+通过 Anthropic MCP 协议，可以在 Claude Code 或 Claude Desktop 中使用 AI 同步公众号文章到多个平台。
 
 ### 配置步骤
 
@@ -145,6 +151,39 @@ pnpm build
 - [待支持的平台列表](https://airtable.com/shrLSJMnTC2BlmP29)
 - [如何开发一个适配器](docs/adapter-spec.md)
 - [API 文档](API.md)
+
+## 使用场景
+
+- **自媒体运营者**: 公众号文章一键同步到知乎、头条、百家号等多平台，提升内容分发效率
+- **技术博主**: 技术博客同步到掘金、CSDN、SegmentFault、开源中国等技术社区
+- **内容创作者**: 告别重复复制粘贴，一次编写多处发布，多平台发文不再繁琐
+- **AI 写作用户**: 配合 Claude / GPT 等 AI 写作工具，AIGC 内容一键发布到多平台
+- **独立博主**: WordPress、Typecho 博客文章同步到各大自媒体平台引流
+
+## 常见问题
+
+**Q: 这是什么工具？**
+
+文章同步助手是一款开源免费的 Chrome 浏览器扩展，帮助自媒体作者、博主、内容创作者将文章一键同步到多个平台，避免重复复制粘贴，是自媒体运营必备的多平台发文工具。
+
+**Q: 支持同步微信公众号文章吗？**
+
+支持。可以直接从微信公众号编辑器提取文章，一键同步到知乎、头条、掘金等 25+ 平台。支持公众号文章同步到头条号、公众号同步到知乎、微信文章同步到掘金等各种场景。
+
+**Q: 支持 AI 写作工具吗？**
+
+支持 Anthropic MCP 协议，可配合 Claude Desktop、Claude Code 等 AI 工具使用，实现 AI 写作、AIGC 内容一键发布。也可以配合 ChatGPT、GPT-4 等工具生成的文章使用。
+
+**Q: 和微小宝、新媒体管家、简媒、蚁小二有什么区别？**
+
+文章同步助手是**开源免费**的，代码完全公开透明，无需付费订阅。作为浏览器扩展运行，数据本地存储更安全，支持 MCP 协议可与 AI 工具集成。
+
+**Q: 如何同步文章到多个平台？**
+
+1. 安装 Chrome 浏览器扩展
+2. 登录各平台账号（知乎、掘金、头条等）
+3. 打开要同步的文章页面
+4. 点击扩展图标，选择目标平台，一键同步
 
 ## License
 
