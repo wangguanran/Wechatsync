@@ -45,12 +45,32 @@ import {
   ImoocAdapter,
   OschinaAdapter,
   SegmentfaultAdapter,
-  XAdapter,
-  XiaohongshuAdapter,
 } from '@wechatsync/core'
 
+// 私有适配器 - 通过 glob 动态加载（文件不存在时为空对象，不会报错）
+const privateModules = import.meta.glob<Record<string, unknown>>(
+  ['../../../core/src/adapters/platforms/x.ts', '../../../core/src/adapters/platforms/xiaohongshu.ts'],
+  { eager: true }
+)
+
+// 适配器构造函数类型
+type AdapterConstructor = new (...args: unknown[]) => PlatformAdapter
+
+// 从 glob 结果中提取适配器类
+function getPrivateAdapters(): AdapterConstructor[] {
+  const adapters: AdapterConstructor[] = []
+  for (const mod of Object.values(privateModules)) {
+    for (const exported of Object.values(mod as Record<string, unknown>)) {
+      if (typeof exported === 'function' && (exported as { prototype?: { meta?: unknown } }).prototype?.meta) {
+        adapters.push(exported as AdapterConstructor)
+      }
+    }
+  }
+  return adapters
+}
+
 // 所有适配器类列表
-const ADAPTER_CLASSES = [
+const ADAPTER_CLASSES: AdapterConstructor[] = [
   ZhihuAdapter,
   JuejinAdapter,
   JianshuAdapter,
@@ -72,9 +92,8 @@ const ADAPTER_CLASSES = [
   ImoocAdapter,
   OschinaAdapter,
   SegmentfaultAdapter,
-  XAdapter,
-  XiaohongshuAdapter,
-] as const
+  ...getPrivateAdapters(),
+]
 
 // 适配器注册条目 (类型安全)
 interface AdapterEntry {
