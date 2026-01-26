@@ -115,9 +115,6 @@ importers:
         specifier: ^3.22.4
         version: 3.25.76
     devDependencies:
-      '@types/mdast':
-        specifier: ^4.0.4
-        version: 4.0.4
       '@types/remarkable':
         specifier: ^2.0.8
         version: 2.0.8
